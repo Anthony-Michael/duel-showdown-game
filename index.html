@@ -16,12 +16,30 @@
     <div class="game-container">
         <canvas id="gameCanvas"></canvas>
         <div id="countdown"></div>
+        
+        <!-- Pattern Display Section -->
+        <div id="patternDisplay" class="pattern-display">
+            <div class="pattern-section">
+                <h3>Player 1 Pattern</h3>
+                <div id="player1Pattern" class="pattern-keys"></div>
+                <div id="player1Progress" class="pattern-progress"></div>
+                <div id="player1Feedback" class="pattern-feedback"></div>
+            </div>
+            <div class="pattern-section">
+                <h3>Player 2 Pattern</h3>
+                <div id="player2Pattern" class="pattern-keys"></div>
+                <div id="player2Progress" class="pattern-progress"></div>
+                <div id="player2Feedback" class="pattern-feedback"></div>
+            </div>
+        </div>
+        
         <div id="result"></div>
         <button id="playAgainBtn" class="play-again-btn">Play Again</button>
         <div class="instructions">
-            <p>Player 1: Press 'A' to shoot</p>
-            <p>Player 2: Press 'L' to shoot</p>
-            <p>Wait for "FIRE!" before shooting!</p>
+            <p>🎯 New Pattern Duel System!</p>
+            <p>Memorize your 3-key pattern when countdown reaches 1</p>
+            <p>First to complete pattern after "FIRE!" wins!</p>
+            <p>Wrong keys or early input = penalty!</p>
         </div>
     </div>
     <script src="game.js"></script>

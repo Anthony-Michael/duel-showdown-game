@@ -1,12 +1,616 @@
 /**
  * Wild West Duel Game
- * A fast-paced two-player dueling game with spectacular visual effects
- * and comprehensive audio handling.
+ * A fast-paced two-player dueling game with spectacular visual effects,
+ * comprehensive audio handling, and advanced pattern-based duel mechanics.
  * 
- * Author: Game Developer
- * Features: Muzzle flashes, bullet trails, sound effects, animations
+ * Author: Anthony Sabatino
+ * Features: Pattern-input duels, muzzle flashes, bullet trails, sound effects, 
+ *           real-time visual feedback, modular architecture, and animations
  */
 
+// ================================
+// 🎯 PATTERN MANAGER MODULE
+// ================================
+
+/**
+ * PatternManager - Handles all pattern generation, tracking, and validation
+ */
+class PatternManager {
+    constructor(config = {}) {
+        this.config = {
+            length: config.length || 3,
+            availableKeys: config.availableKeys || ['A', 'S', 'D', 'W', 'Q', 'E', 'Z', 'X', 'C'],
+            displayTime: config.displayTime || 2000,
+            penaltyTime: config.penaltyTime || 1000
+        };
+        
+        // Player pattern states
+        this.players = {
+            player1: this.createPlayerState(),
+            player2: this.createPlayerState()
+        };
+        
+        // Input queue for game loop processing
+        this.inputQueue = [];
+        
+        // UI elements (will be set by game)
+        this.uiElements = {};
+    }
+
+    /**
+     * Create initial player pattern state
+     */
+    createPlayerState() {
+        return {
+            pattern: [],
+            progress: 0,
+            isDisqualified: false,
+            lastInputTime: 0,
+            isComplete: false
+        };
+    }
+
+    /**
+     * Set UI elements for pattern display
+     */
+    setUIElements(elements) {
+        this.uiElements = elements;
+    }
+
+    /**
+     * Generate unique patterns for both players
+     */
+    generatePatterns() {
+        this.players.player1.pattern = this.generateRandomPattern();
+        this.players.player2.pattern = this.generateRandomPattern();
+        
+        // Ensure patterns are different
+        while (this.arraysEqual(this.players.player1.pattern, this.players.player2.pattern)) {
+            this.players.player2.pattern = this.generateRandomPattern();
+        }
+        
+        console.log('🎯 Generated patterns - Player 1:', this.players.player1.pattern, 'Player 2:', this.players.player2.pattern);
+        return {
+            player1: [...this.players.player1.pattern],
+            player2: [...this.players.player2.pattern]
+        };
+    }
+
+    /**
+     * Generate a random pattern of unique keys
+     */
+    generateRandomPattern() {
+        const pattern = [];
+        const availableKeys = [...this.config.availableKeys];
+        
+        for (let i = 0; i < this.config.length; i++) {
+            const randomIndex = Math.floor(Math.random() * availableKeys.length);
+            const selectedKey = availableKeys[randomIndex];
+            pattern.push(selectedKey);
+            // Remove selected key to avoid duplicates in pattern
+            availableKeys.splice(randomIndex, 1);
+        }
+        
+        return pattern;
+    }
+
+    /**
+     * Check if two arrays are equal
+     */
+    arraysEqual(a, b) {
+        return Array.isArray(a) && Array.isArray(b) && 
+               a.length === b.length && 
+               a.every((val, index) => val === b[index]);
+    }
+
+    /**
+     * Reset all player patterns and progress
+     */
+    reset() {
+        this.players.player1 = this.createPlayerState();
+        this.players.player2 = this.createPlayerState();
+        this.inputQueue = [];
+        this.resetAllVisualStates();
+    }
+
+    /**
+     * Reset all visual states and feedback messages
+     */
+    resetAllVisualStates() {
+        // Clear all pattern key elements
+        const patternElements = [
+            this.uiElements.player1PatternElement,
+            this.uiElements.player2PatternElement
+        ];
+        
+        patternElements.forEach(element => {
+            if (element) {
+                element.innerHTML = '';
+            }
+        });
+        
+        // Reset progress displays
+        const progressElements = [
+            this.uiElements.player1ProgressElement,
+            this.uiElements.player2ProgressElement
+        ];
+        
+        progressElements.forEach(element => {
+            if (element) {
+                element.textContent = '';
+                element.style.color = '#F5DEB3';
+            }
+        });
+        
+        // Reset feedback messages
+        const feedbackElements = [
+            this.uiElements.player1FeedbackElement,
+            this.uiElements.player2FeedbackElement
+        ];
+        
+        feedbackElements.forEach(element => {
+            if (element) {
+                element.textContent = '';
+                element.className = 'pattern-feedback';
+            }
+        });
+    }
+
+    /**
+     * Display patterns in UI
+     */
+    displayPatterns() {
+        this.renderPatternDisplay(this.players.player1.pattern, 'player1');
+        this.renderPatternDisplay(this.players.player2.pattern, 'player2');
+        
+        if (this.uiElements.patternDisplay) {
+            this.uiElements.patternDisplay.classList.add('show');
+        }
+        
+        // Initialize progress displays and visual states
+        this.updateProgressDisplay('player1');
+        this.updateProgressDisplay('player2');
+        
+        // Initialize feedback messages
+        this.initializeFeedbackMessages();
+    }
+
+    /**
+     * Initialize feedback messages for both players
+     */
+    initializeFeedbackMessages() {
+        const feedbackElements = [
+            this.uiElements.player1FeedbackElement,
+            this.uiElements.player2FeedbackElement
+        ];
+        
+        feedbackElements.forEach(element => {
+            if (element) {
+                element.textContent = 'Memorize your pattern!';
+                element.className = 'pattern-feedback';
+            }
+        });
+    }
+
+    /**
+     * Hide patterns from UI
+     */
+    hidePatterns() {
+        if (this.uiElements.patternDisplay) {
+            this.uiElements.patternDisplay.classList.remove('show');
+        }
+    }
+
+    /**
+     * Render pattern keys for a specific player
+     */
+    renderPatternDisplay(pattern, playerId) {
+        const patternElement = this.uiElements[`${playerId}PatternElement`];
+        if (!patternElement) return;
+        
+        patternElement.innerHTML = '';
+        
+        pattern.forEach((key, index) => {
+            const keyElement = document.createElement('div');
+            keyElement.className = 'pattern-key';
+            keyElement.textContent = key;
+            keyElement.id = `${playerId}_key_${index}`;
+            patternElement.appendChild(keyElement);
+        });
+    }
+
+    /**
+     * Update progress display for a player
+     */
+    updateProgressDisplay(playerId) {
+        const player = this.players[playerId];
+        const progressElement = this.uiElements[`${playerId}ProgressElement`];
+        
+        if (!progressElement) return;
+        
+        progressElement.textContent = `Progress: ${player.progress}/${this.config.length}`;
+        progressElement.style.color = '#F5DEB3';
+        
+        // Update visual feedback for all keys
+        this.updateKeyVisualStates(playerId);
+        
+        // Show progress feedback
+        this.showProgressFeedback(playerId, player.progress);
+    }
+
+    /**
+     * Update visual states of pattern keys
+     */
+    updateKeyVisualStates(playerId) {
+        const player = this.players[playerId];
+        
+        for (let i = 0; i < player.pattern.length; i++) {
+            const keyElement = document.getElementById(`${playerId}_key_${i}`);
+            if (!keyElement) continue;
+            
+            // Clear all state classes
+            keyElement.classList.remove('completed', 'error', 'current', 'active');
+            
+            if (i < player.progress) {
+                // Completed keys
+                keyElement.classList.add('completed');
+                this.triggerKeyAnimation(keyElement, 'active');
+            } else if (i === player.progress && !player.isDisqualified && !player.isComplete) {
+                // Current target key
+                keyElement.classList.add('current');
+            }
+        }
+    }
+
+    /**
+     * Trigger key animation effect
+     */
+    triggerKeyAnimation(keyElement, animationClass) {
+        keyElement.classList.add(animationClass);
+        setTimeout(() => {
+            keyElement.classList.remove(animationClass);
+        }, 300);
+    }
+
+    /**
+     * Show progress feedback message
+     */
+    showProgressFeedback(playerId, progress) {
+        const feedbackElement = this.uiElements[`${playerId}FeedbackElement`];
+        if (!feedbackElement) return;
+        
+        const totalKeys = this.config.length;
+        const percentage = Math.round((progress / totalKeys) * 100);
+        
+        if (progress === 0) {
+            feedbackElement.textContent = 'Ready to start!';
+            feedbackElement.className = 'pattern-feedback';
+        } else if (progress < totalKeys) {
+            feedbackElement.textContent = `${percentage}% Complete`;
+            feedbackElement.className = 'pattern-feedback success';
+        }
+    }
+
+    /**
+     * Queue input for pattern validation (non-immediate processing)
+     */
+    queueInput(key, timestamp) {
+        const upperKey = key.toUpperCase();
+        
+        if (!this.config.availableKeys.includes(upperKey)) {
+            return null;
+        }
+        
+        // Add to input queue for processing in game loop
+        if (!this.inputQueue) {
+            this.inputQueue = [];
+        }
+        
+        this.inputQueue.push({
+            key: upperKey,
+            timestamp: timestamp
+        });
+        
+        console.log(`🎹 Queued input: ${upperKey} at ${timestamp} (Queue length: ${this.inputQueue.length})`);
+        return { type: 'queued', key: upperKey, queueLength: this.inputQueue.length };
+    }
+
+    /**
+     * Process all queued inputs (called from game loop)
+     */
+    processQueuedInputs(gameState, isReadyState) {
+        if (!this.inputQueue || this.inputQueue.length === 0) {
+            return [];
+        }
+        
+        const results = [];
+        
+        // Process each queued input
+        const initialQueueLength = this.inputQueue.length;
+        while (this.inputQueue.length > 0) {
+            const input = this.inputQueue.shift();
+            console.log(`🔄 Processing queued input: ${input.key} (${initialQueueLength - this.inputQueue.length}/${initialQueueLength})`);
+            
+            const inputResults = this.handleInput(input.key, gameState, isReadyState, input.timestamp);
+            
+            if (inputResults) {
+                if (Array.isArray(inputResults)) {
+                    results.push(...inputResults);
+                } else {
+                    results.push(inputResults);
+                }
+            }
+        }
+        
+        return results;
+    }
+
+    /**
+     * Handle input for pattern validation (internal processing)
+     */
+    handleInput(key, gameState, isReadyState, timestamp = Date.now()) {
+        const upperKey = key.toUpperCase();
+        
+        if (!isReadyState) {
+            return this.handleEarlyInput(upperKey);
+        }
+        
+        // Check which player this key belongs to
+        const results = [];
+        
+        if (this.isValidInput('player1', upperKey)) {
+            results.push(this.processInput('player1', upperKey, timestamp));
+        }
+        
+        if (this.isValidInput('player2', upperKey)) {
+            results.push(this.processInput('player2', upperKey, timestamp));
+        }
+        
+        return results;
+    }
+
+    /**
+     * Check if input is valid for a player
+     */
+    isValidInput(playerId, key) {
+        const player = this.players[playerId];
+        return !player.isDisqualified && 
+               !player.isComplete && 
+               player.progress < player.pattern.length && 
+               player.pattern[player.progress] === key;
+    }
+
+    /**
+     * Process valid input for a player
+     */
+    processInput(playerId, key, timestamp = Date.now()) {
+        const player = this.players[playerId];
+        
+        player.progress++;
+        player.lastInputTime = timestamp;
+        
+        console.log(`✅ ${playerId} correct key: ${key} (${player.progress}/${player.pattern.length})`);
+        
+        // Update visual feedback
+        this.updateProgressDisplay(playerId);
+        
+        // Check if pattern is complete
+        if (player.progress >= player.pattern.length) {
+            player.isComplete = true;
+            this.showCompletionFeedback(playerId);
+            
+            return {
+                type: 'complete',
+                playerId: playerId,
+                timestamp: timestamp
+            };
+        }
+        
+        return {
+            type: 'progress',
+            playerId: playerId,
+            progress: player.progress
+        };
+    }
+
+    /**
+     * Handle early input (before FIRE!)
+     */
+    handleEarlyInput(key) {
+        if (!this.config.availableKeys.includes(key)) {
+            return null;
+        }
+        
+        console.warn(`⚠️ Early input detected: ${key}`);
+        
+        // Determine which player pressed early
+        let playerId = null;
+        
+        if (this.players.player1.pattern.includes(key)) {
+            playerId = 'player1';
+        } else if (this.players.player2.pattern.includes(key)) {
+            playerId = 'player2';
+        }
+        
+        if (playerId && !this.players[playerId].isDisqualified) {
+            this.disqualifyPlayer(playerId, 'TOO EARLY');
+            return {
+                type: 'disqualified',
+                playerId: playerId,
+                reason: 'early'
+            };
+        }
+        
+        return null;
+    }
+
+    /**
+     * Disqualify a player with feedback
+     */
+    disqualifyPlayer(playerId, reason) {
+        const player = this.players[playerId];
+        player.isDisqualified = true;
+        
+        // Update progress display
+        const progressElement = this.uiElements[`${playerId}ProgressElement`];
+        if (progressElement) {
+            progressElement.textContent = `⚡ ${reason} - DISQUALIFIED!`;
+            progressElement.style.color = '#FF6347';
+        }
+        
+        // Show error feedback
+        const feedbackElement = this.uiElements[`${playerId}FeedbackElement`];
+        if (feedbackElement) {
+            feedbackElement.textContent = reason === 'TOO EARLY' ? 'Too Early!' : 'Wrong Key!';
+            feedbackElement.className = 'pattern-feedback error';
+        }
+        
+        // Mark current key as error if applicable
+        if (player.progress < player.pattern.length) {
+            const keyElement = document.getElementById(`${playerId}_key_${player.progress}`);
+            if (keyElement) {
+                keyElement.classList.add('error');
+            }
+        }
+        
+        // Mark all remaining keys as error
+        this.markRemainingKeysAsError(playerId);
+        
+        console.warn(`⚡ ${playerId} disqualified: ${reason}`);
+    }
+
+    /**
+     * Mark remaining keys as error state
+     */
+    markRemainingKeysAsError(playerId) {
+        const player = this.players[playerId];
+        
+        for (let i = player.progress; i < player.pattern.length; i++) {
+            const keyElement = document.getElementById(`${playerId}_key_${i}`);
+            if (keyElement) {
+                setTimeout(() => {
+                    keyElement.classList.add('error');
+                }, i * 100); // Stagger the error animation
+            }
+        }
+    }
+
+    /**
+     * Show completion feedback for a player
+     */
+    showCompletionFeedback(playerId) {
+        const progressElement = this.uiElements[`${playerId}ProgressElement`];
+        if (progressElement) {
+            progressElement.textContent = `🎯 PATTERN COMPLETE - FIRED!`;
+            progressElement.style.color = '#32CD32';
+        }
+        
+        // Show completion feedback
+        const feedbackElement = this.uiElements[`${playerId}FeedbackElement`];
+        if (feedbackElement) {
+            feedbackElement.textContent = 'FIRED! 🔥';
+            feedbackElement.className = 'pattern-feedback complete';
+        }
+        
+        // Trigger completion animation on all keys
+        this.triggerCompletionAnimation(playerId);
+    }
+
+    /**
+     * Trigger completion animation for all pattern keys
+     */
+    triggerCompletionAnimation(playerId) {
+        const player = this.players[playerId];
+        
+        for (let i = 0; i < player.pattern.length; i++) {
+            const keyElement = document.getElementById(`${playerId}_key_${i}`);
+            if (keyElement) {
+                setTimeout(() => {
+                    keyElement.classList.add('active');
+                    setTimeout(() => {
+                        keyElement.classList.remove('active');
+                    }, 300);
+                }, i * 100); // Stagger the completion animation
+            }
+        }
+    }
+
+    /**
+     * Get game end state based on player completion/disqualification
+     */
+    getGameEndState() {
+        const p1 = this.players.player1;
+        const p2 = this.players.player2;
+        
+        const p1Done = p1.isComplete || p1.isDisqualified;
+        const p2Done = p2.isComplete || p2.isDisqualified;
+        
+        if (!p1Done && !p2Done) {
+            return null; // Game continues
+        }
+        
+        // Determine winner
+        if (p1.isDisqualified && p2.isDisqualified) {
+            return { winner: 'none', reason: 'Both Disqualified!' };
+        } else if (p1.isDisqualified) {
+            return { winner: 'player2', reason: 'Player 2 Wins! (P1 Disqualified)' };
+        } else if (p2.isDisqualified) {
+            return { winner: 'player1', reason: 'Player 1 Wins! (P2 Disqualified)' };
+        } else if (p1.isComplete && p2.isComplete) {
+            // Both completed - check timing
+            const timeDiff = Math.abs(p1.lastInputTime - p2.lastInputTime);
+            if (timeDiff < 50) {
+                return { winner: 'draw', reason: 'Draw!' };
+            } else if (p1.lastInputTime < p2.lastInputTime) {
+                return { winner: 'player1', reason: 'Player 1 Wins!' };
+            } else {
+                return { winner: 'player2', reason: 'Player 2 Wins!' };
+            }
+        } else if (p1.isComplete) {
+            return { winner: 'player1', reason: 'Player 1 Wins!' };
+        } else if (p2.isComplete) {
+            return { winner: 'player2', reason: 'Player 2 Wins!' };
+        }
+        
+        return null;
+    }
+
+    /**
+     * Check if a key belongs to any player's pattern
+     */
+    isPatternKey(key) {
+        return this.config.availableKeys.includes(key.toUpperCase());
+    }
+
+    /**
+     * Get player states (for external access)
+     */
+    getPlayerStates() {
+        return {
+            player1: { ...this.players.player1 },
+            player2: { ...this.players.player2 }
+        };
+    }
+
+    /**
+     * Get input queue status for debugging
+     */
+    getInputQueueStatus() {
+        return {
+            queueLength: this.inputQueue.length,
+            queuedInputs: [...this.inputQueue],
+            hasQueuedInputs: this.inputQueue.length > 0
+        };
+    }
+}
+
+// ================================
+// 🎮 DUEL GAME CLASS
+// ================================
+
+/**
+ * DuelGame - Main game class for Wild West Pattern Duel
+ */
 class DuelGame {
     // ================================
     // 🎮 INITIALIZATION SECTION
@@ -16,6 +620,7 @@ class DuelGame {
         this.initializeDOM();
         this.initializeCanvas();
         this.initializeConstants();
+        this.initializePatternManager();
         this.initializeGameState();
         this.initializeAudio();
         this.initializeVisualEffects();
@@ -34,6 +639,15 @@ class DuelGame {
         this.countdownElement = document.getElementById('countdown');
         this.resultElement = document.getElementById('result');
         this.playAgainBtn = document.getElementById('playAgainBtn');
+        
+        // Pattern display elements
+        this.patternDisplay = document.getElementById('patternDisplay');
+        this.player1PatternElement = document.getElementById('player1Pattern');
+        this.player2PatternElement = document.getElementById('player2Pattern');
+        this.player1ProgressElement = document.getElementById('player1Progress');
+        this.player2ProgressElement = document.getElementById('player2Progress');
+        this.player1FeedbackElement = document.getElementById('player1Feedback');
+        this.player2FeedbackElement = document.getElementById('player2Feedback');
     }
     
     initializeCanvas() {
@@ -44,7 +658,8 @@ class DuelGame {
     initializeConstants() {
         this.GAME_STATES = {
             WAITING: 'waiting',
-            COUNTDOWN: 'countdown', 
+            COUNTDOWN: 'countdown',
+            PATTERN_SHOWN: 'pattern_shown', // New state when patterns are displayed
             READY: 'ready',
             FINISHED: 'finished'
         };
@@ -56,9 +671,33 @@ class DuelGame {
             player2: { x: 590, y: 250, gunX: 600, gunY: 270 }
         };
         
+        // Pattern configuration for PatternManager
+        this.PATTERN_CONFIG = {
+            length: 3,
+            availableKeys: ['A', 'S', 'D', 'W', 'Q', 'E', 'Z', 'X', 'C'],
+            displayTime: 2000,
+            penaltyTime: 1000
+        };
+        
         this.ANIMATION_DURATION = 200; // ms
         this.COUNTDOWN_DURATION = 3;
         this.GAME_TIMEOUT = 2000; // ms
+    }
+
+    initializePatternManager() {
+        // Create PatternManager instance
+        this.patternManager = new PatternManager(this.PATTERN_CONFIG);
+        
+        // Set UI elements for PatternManager
+        this.patternManager.setUIElements({
+            patternDisplay: this.patternDisplay,
+            player1PatternElement: this.player1PatternElement,
+            player2PatternElement: this.player2PatternElement,
+            player1ProgressElement: this.player1ProgressElement,
+            player2ProgressElement: this.player2ProgressElement,
+            player1FeedbackElement: this.player1FeedbackElement,
+            player2FeedbackElement: this.player2FeedbackElement
+        });
     }
     
     // ================================
@@ -71,13 +710,19 @@ class DuelGame {
         this.countdownTimer = 0;
         this.countdownTimeoutId = null;
         this.gameEndTimeoutId = null;
+        this.patternTimeoutId = null;
         
         this.player1 = {
             ...this.PLAYER_CONFIG.player1,
             width: this.PLAYER_CONFIG.width,
             height: this.PLAYER_CONFIG.height,
             hasShot: false,
-            shotTime: 0
+            shotTime: 0,
+            // Pattern-related properties
+            pattern: [],
+            patternProgress: 0,
+            isDisqualified: false,
+            lastInputTime: 0
         };
         
         this.player2 = {
@@ -85,12 +730,18 @@ class DuelGame {
             width: this.PLAYER_CONFIG.width,
             height: this.PLAYER_CONFIG.height,
             hasShot: false,
-            shotTime: 0
+            shotTime: 0,
+            // Pattern-related properties
+            pattern: [],
+            patternProgress: 0,
+            isDisqualified: false,
+            lastInputTime: 0
         };
         
         this.keys = {};
+        this.currentPatterns = { player1: [], player2: [] };
     }
-    
+
     // ================================
     // 🎨 DRAWING/RENDERING SECTION
     // ================================
@@ -104,6 +755,9 @@ class DuelGame {
         // Clear canvas
         this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
         
+        // Process queued pattern inputs if in READY state
+        this.processPatternInputs();
+        
         // Draw background elements
         this.drawBackground();
         
@@ -116,6 +770,47 @@ class DuelGame {
         
         // Update visual effects
         this.updateVisualEffects();
+    }
+
+    /**
+     * Process queued pattern inputs during the game loop
+     */
+    processPatternInputs() {
+        if (this.gameState === this.GAME_STATES.READY) {
+            const results = this.patternManager.processQueuedInputs(this.gameState, true);
+            
+            if (results && results.length > 0) {
+                console.log(`🎯 Processing ${results.length} pattern input results`);
+                results.forEach(result => this.handlePatternResult(result));
+            }
+        }
+    }
+
+    /**
+     * Get current input queue status for debugging
+     */
+    getInputQueueStatus() {
+        return {
+            queueLength: this.patternManager.inputQueue ? this.patternManager.inputQueue.length : 0,
+            queuedInputs: this.patternManager.inputQueue ? [...this.patternManager.inputQueue] : [],
+            gameState: this.gameState,
+            isListening: this.gameState === this.GAME_STATES.READY
+        };
+    }
+
+    /**
+     * Update feedback messages when game enters READY state
+     */
+    updateFeedbackForReadyState() {
+        if (this.player1FeedbackElement) {
+            this.player1FeedbackElement.textContent = 'Input your pattern now!';
+            this.player1FeedbackElement.className = 'pattern-feedback';
+        }
+        
+        if (this.player2FeedbackElement) {
+            this.player2FeedbackElement.textContent = 'Input your pattern now!';
+            this.player2FeedbackElement.className = 'pattern-feedback';
+        }
     }
     
     drawBackground() {
@@ -202,53 +897,83 @@ class DuelGame {
     }
     
     handleInput(key) {
+        const upperKey = key.toUpperCase();
+        const timestamp = Date.now();
+        
         if (this.gameState === this.GAME_STATES.WAITING) {
-            if (key === 'a' || key === 'l') {
+            // Any pattern key starts the countdown
+            if (this.patternManager.isPatternKey(upperKey)) {
                 this.startCountdown();
             }
-        } else if (this.gameState === this.GAME_STATES.READY) {
-            if (key === 'a' && !this.player1.hasShot) {
-                this.shootPlayer(this.player1, 1);
-            } else if (key === 'l' && !this.player2.hasShot) {
-                this.shootPlayer(this.player2, -1);
+        } else if (this.gameState === this.GAME_STATES.PATTERN_SHOWN) {
+            // Handle early input during pattern memorization - process immediately
+            const result = this.patternManager.handleInput(upperKey, this.gameState, false, timestamp);
+            if (result) {
+                this.handlePatternResult(result);
             }
-        } else {
-            // Handle early shots with explicit feedback
-            if (key === 'a' || key === 'l') {
-                const playerName = key === 'a' ? 'Player 1' : 'Player 2';
-                console.warn(`${playerName} shot too early! Current state: ${this.gameState}`);
+        } else if (this.gameState === this.GAME_STATES.READY) {
+            // Queue input for processing in game loop
+            const queueResult = this.patternManager.queueInput(upperKey, timestamp);
+            if (queueResult) {
+                console.log(`🎮 Input queued for processing: ${upperKey}`);
+            }
+        } else if (this.gameState === this.GAME_STATES.COUNTDOWN) {
+            // Handle early input during countdown - process immediately
+            const result = this.patternManager.handleInput(upperKey, this.gameState, false, timestamp);
+            if (result) {
+                this.handlePatternResult(result);
             }
         }
     }
-    
-    shootPlayer(player, direction) {
-        // Extra safety check: Prevent shooting if not in 'ready' state
-        if (this.gameState !== this.GAME_STATES.READY) {
-            console.warn('Early shot attempt blocked - game not ready');
-            return;
+
+    /**
+     * Handle results from PatternManager
+     */
+    handlePatternResult(result) {
+        if (result.type === 'complete') {
+            this.handlePatternComplete(result.playerId, result.timestamp);
+        } else if (result.type === 'disqualified') {
+            // Disqualification is already handled by PatternManager UI
+            this.checkGameEnd();
+        } else if (result.type === 'progress') {
+            // Progress updates are handled by PatternManager UI
+            // No additional action needed here
         }
+    }
+
+    /**
+     * Handle pattern completion - fire the shot!
+     */
+    handlePatternComplete(playerId, timestamp) {
+        const player = playerId === 'player1' ? this.player1 : this.player2;
+        const direction = playerId === 'player1' ? 1 : -1;
         
         player.hasShot = true;
-        player.shotTime = Date.now();
+        player.shotTime = timestamp;
         
-        // Play gunshot sound effect (only for valid shots after "FIRE!")
+        console.log(`🎯 ${playerId} completed pattern and fired!`);
+        
+        // Play gunshot sound effect
         this.playGunshotSound();
         
-        // Create muzzle flash
+        // Create muzzle flash and bullet trail
         const muzzleFlash = new MuzzleFlash(player.gunX, player.gunY, direction);
         this.muzzleFlashes.push(muzzleFlash);
         
-        // Create bullet trail
         const startX = player.gunX;
         const startY = player.gunY;
         const endX = direction === 1 ? this.canvas.width - 50 : 50;
-        const endY = startY + (Math.random() - 0.5) * 40; // Slight random trajectory
+        const endY = startY + (Math.random() - 0.5) * 40;
         
         const bulletTrail = new BulletTrail(startX, startY, endX, endY);
         this.bulletTrails.push(bulletTrail);
         
         this.checkGameEnd();
     }
+
+
+    
+
     
     // ================================
     // 🔊 AUDIO HANDLING SECTION
@@ -389,49 +1114,62 @@ class DuelGame {
         this.gameState = this.GAME_STATES.COUNTDOWN;
         this.countdownValue = this.COUNTDOWN_DURATION;
         this.countdownTimer = Date.now();
+        
+        // Generate patterns at the start of countdown
+        const patterns = this.patternManager.generatePatterns();
+        
+        // Store patterns in player objects for backward compatibility
+        this.player1.pattern = patterns.player1;
+        this.player2.pattern = patterns.player2;
+        
         this.countdown();
     }
-    
+
     countdown() {
-        if (this.countdownValue > 0) {
+        if (this.countdownValue > 1) {
             this.countdownElement.textContent = this.countdownValue;
             this.countdownValue--;
             this.countdownTimeoutId = setTimeout(() => this.countdown(), 1000);
-        } else {
-            this.countdownElement.textContent = 'FIRE!';
-            this.gameState = this.GAME_STATES.READY;
-            this.gameEndTimeoutId = setTimeout(() => {
-                if (this.gameState === this.GAME_STATES.READY) {
-                    // Nobody shot in time
-                    this.gameState = this.GAME_STATES.FINISHED;
-                    this.resultElement.textContent = 'Too slow!';
-                    this.playAgainBtn.classList.add('show');
-                }
-            }, this.GAME_TIMEOUT);
+        } else if (this.countdownValue === 1) {
+            // Show patterns when countdown reaches 1
+            this.countdownElement.textContent = 'MEMORIZE YOUR PATTERN!';
+            this.patternManager.displayPatterns();
+            this.gameState = this.GAME_STATES.PATTERN_SHOWN;
+            
+            // Give players time to memorize patterns
+            this.patternTimeoutId = setTimeout(() => {
+                this.countdownElement.textContent = 'FIRE! ⌨️ LISTENING FOR PATTERNS...';
+                this.gameState = this.GAME_STATES.READY;
+                
+                // Update feedback messages for ready state
+                this.updateFeedbackForReadyState();
+                
+                console.log('🎮 Game loop now listening for pattern inputs!');
+                console.log('🎯 Input queue initialized and ready');
+                
+                // Set game timeout for maximum duel duration
+                this.gameEndTimeoutId = setTimeout(() => {
+                    if (this.gameState === this.GAME_STATES.READY) {
+                        // Nobody shot in time
+                        this.gameState = this.GAME_STATES.FINISHED;
+                        this.resultElement.textContent = 'Too slow!';
+                        this.playAgainBtn.classList.add('show');
+                    }
+                }, this.GAME_TIMEOUT);
+            }, this.PATTERN_CONFIG.displayTime);
         }
     }
     
     checkGameEnd() {
-        if (this.player1.hasShot || this.player2.hasShot) {
+        // Get game end state from PatternManager
+        const endState = this.patternManager.getGameEndState();
+        
+        if (endState) {
             this.gameState = this.GAME_STATES.FINISHED;
+            this.resultElement.textContent = endState.reason;
             
-            if (this.player1.hasShot && this.player2.hasShot) {
-                // Both shot, determine winner by time
-                const timeDiff = Math.abs(this.player1.shotTime - this.player2.shotTime);
-                if (timeDiff < 50) { // Within 50ms is a draw
-                    this.resultElement.textContent = 'Draw!';
-                } else if (this.player1.shotTime < this.player2.shotTime) {
-                    this.resultElement.textContent = 'Player 1 Wins!';
-                } else {
-                    this.resultElement.textContent = 'Player 2 Wins!';
-                }
-            } else if (this.player1.hasShot) {
-                this.resultElement.textContent = 'Player 1 Wins!';
-            } else {
-                this.resultElement.textContent = 'Player 2 Wins!';
-            }
-            
-            // Show the Play Again button
+            // Hide patterns and show the Play Again button
+            this.patternManager.hidePatterns();
             this.playAgainBtn.classList.add('show');
         }
     }
@@ -472,19 +1210,39 @@ class DuelGame {
             clearTimeout(this.gameEndTimeoutId);
             this.gameEndTimeoutId = null;
         }
+        if (this.patternTimeoutId) {
+            clearTimeout(this.patternTimeoutId);
+            this.patternTimeoutId = null;
+        }
     }
-    
+
     resetPlayers() {
         this.player1.hasShot = false;
         this.player1.shotTime = 0;
+        this.player1.pattern = [];
+        this.player1.patternProgress = 0;
+        this.player1.isDisqualified = false;
+        this.player1.lastInputTime = 0;
+        
         this.player2.hasShot = false;
         this.player2.shotTime = 0;
+        this.player2.pattern = [];
+        this.player2.patternProgress = 0;
+        this.player2.isDisqualified = false;
+        this.player2.lastInputTime = 0;
+        
+        // Reset PatternManager
+        this.patternManager.reset();
     }
-    
+
     resetUI() {
-        this.countdownElement.textContent = 'Press A or L to start!';
+        this.countdownElement.textContent = 'Press any pattern key to start!';
         this.resultElement.textContent = '';
         this.playAgainBtn.classList.remove('show');
+        
+        // Reset pattern display using PatternManager
+        this.patternManager.hidePatterns();
+        // Note: Visual states are already reset by PatternManager.reset() in resetPlayers()
     }
     
     clearVisualEffects() {
@@ -707,6 +1465,38 @@ document.addEventListener('DOMContentLoaded', () => {
     // Expose game instance globally for debugging and testing
     window.duelGame = game;
     
+    // Debug functions for input queue monitoring
+    window.debugInputQueue = () => {
+        const status = window.duelGame.getInputQueueStatus();
+        console.log('🔍 Input Queue Debug:', status);
+        return status;
+    };
+    
+    window.debugPatternManager = () => {
+        const pmStatus = window.duelGame.patternManager.getInputQueueStatus();
+        const playerStates = window.duelGame.patternManager.getPlayerStates();
+        console.log('🎯 PatternManager Debug:', { queue: pmStatus, players: playerStates });
+        return { queue: pmStatus, players: playerStates };
+    };
+    
+    // Demo function to show input queue behavior
+    window.demoInputQueue = () => {
+        console.log('🎮 Input Queue Demo:');
+        console.log('1. Start a game and wait for "FIRE!"');
+        console.log('2. Press pattern keys rapidly');
+        console.log('3. Call debugInputQueue() to see queued inputs');
+        console.log('4. Watch console for processing messages');
+        console.log('5. Inputs are processed in game loop, not immediately!');
+        
+        if (window.duelGame.gameState === 'ready') {
+            console.log('🎯 Game is READY - input queue is active!');
+            console.log('🎹 Try pressing pattern keys now and call debugInputQueue()');
+        } else {
+            console.log(`⏳ Game state: ${window.duelGame.gameState} - start a game first`);
+        }
+    };
+    
     console.log('🎮 Wild West Duel Game ready to play!');
     console.log('🔧 Access game instance via window.duelGame for debugging');
+    console.log('🔧 Debug functions: debugInputQueue(), debugPatternManager(), demoInputQueue()');
 });
