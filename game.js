@@ -1,90 +1,523 @@
-// Game canvas and context
-const canvas = document.getElementById('gameCanvas');
-const ctx = canvas.getContext('2d');
-const countdownElement = document.getElementById('countdown');
-const resultElement = document.getElementById('result');
-const playAgainBtn = document.getElementById('playAgainBtn');
+/**
+ * Wild West Duel Game
+ * A fast-paced two-player dueling game with spectacular visual effects
+ * and comprehensive audio handling.
+ * 
+ * Author: Game Developer
+ * Features: Muzzle flashes, bullet trails, sound effects, animations
+ */
 
-// Set canvas size
-canvas.width = 800;
-canvas.height = 400;
-
-// Audio setup - Enhanced gunshot sound handling with comprehensive error handling
-// Features: preloading, load state tracking, early shot prevention, detailed error reporting
-const gunshotSound = new Audio('assets/gunshot.mp3');
-gunshotSound.preload = 'auto';
-gunshotSound.volume = 0.7; // Set volume to 70%
-
-// Audio loading state tracking
-let audioLoaded = false;
-let audioError = false;
-let audioLoadAttempted = false;
-
-// Enhanced audio loading event handlers
-gunshotSound.addEventListener('canplaythrough', () => {
-    audioLoaded = true;
-    audioError = false;
-    console.log('Gunshot sound loaded successfully');
-});
-
-gunshotSound.addEventListener('error', (e) => {
-    audioError = true;
-    audioLoaded = false;
-    console.warn('Gunshot sound file failed to load:', e.type, 'Game will continue without sound.');
-});
-
-gunshotSound.addEventListener('loadstart', () => {
-    audioLoadAttempted = true;
-    console.log('Starting to load gunshot sound...');
-});
-
-gunshotSound.addEventListener('loadeddata', () => {
-    console.log('Gunshot sound data loaded');
-});
-
-// Preload the audio with error handling
-try {
-    gunshotSound.load();
-} catch (error) {
-    console.warn('Failed to initiate audio loading:', error.message);
-    audioError = true;
+class DuelGame {
+    // ================================
+    // 🎮 INITIALIZATION SECTION
+    // ================================
+    
+    constructor() {
+        this.initializeDOM();
+        this.initializeCanvas();
+        this.initializeConstants();
+        this.initializeGameState();
+        this.initializeAudio();
+        this.initializeVisualEffects();
+        this.initializeEventListeners();
+        
+        // Start the game
+        this.reset();
+        this.startGameLoop();
+        
+        console.log('🤠 Wild West Duel Game initialized successfully!');
+    }
+    
+    initializeDOM() {
+        this.canvas = document.getElementById('gameCanvas');
+        this.ctx = this.canvas.getContext('2d');
+        this.countdownElement = document.getElementById('countdown');
+        this.resultElement = document.getElementById('result');
+        this.playAgainBtn = document.getElementById('playAgainBtn');
+    }
+    
+    initializeCanvas() {
+        this.canvas.width = 800;
+        this.canvas.height = 400;
+    }
+    
+    initializeConstants() {
+        this.GAME_STATES = {
+            WAITING: 'waiting',
+            COUNTDOWN: 'countdown', 
+            READY: 'ready',
+            FINISHED: 'finished'
+        };
+        
+        this.PLAYER_CONFIG = {
+            width: 60,
+            height: 80,
+            player1: { x: 150, y: 250, gunX: 200, gunY: 270 },
+            player2: { x: 590, y: 250, gunX: 600, gunY: 270 }
+        };
+        
+        this.ANIMATION_DURATION = 200; // ms
+        this.COUNTDOWN_DURATION = 3;
+        this.GAME_TIMEOUT = 2000; // ms
+    }
+    
+    // ================================
+    // 🎯 GAME STATE SECTION
+    // ================================
+    
+    initializeGameState() {
+        this.gameState = this.GAME_STATES.WAITING;
+        this.countdownValue = this.COUNTDOWN_DURATION;
+        this.countdownTimer = 0;
+        this.countdownTimeoutId = null;
+        this.gameEndTimeoutId = null;
+        
+        this.player1 = {
+            ...this.PLAYER_CONFIG.player1,
+            width: this.PLAYER_CONFIG.width,
+            height: this.PLAYER_CONFIG.height,
+            hasShot: false,
+            shotTime: 0
+        };
+        
+        this.player2 = {
+            ...this.PLAYER_CONFIG.player2,
+            width: this.PLAYER_CONFIG.width,
+            height: this.PLAYER_CONFIG.height,
+            hasShot: false,
+            shotTime: 0
+        };
+        
+        this.keys = {};
+    }
+    
+    // ================================
+    // 🎨 DRAWING/RENDERING SECTION
+    // ================================
+    
+    initializeVisualEffects() {
+        this.muzzleFlashes = [];
+        this.bulletTrails = [];
+    }
+    
+    draw() {
+        // Clear canvas
+        this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+        
+        // Draw background elements
+        this.drawBackground();
+        
+        // Draw players
+        this.drawPlayer(this.player1, 1);
+        this.drawPlayer(this.player2, -1);
+        
+        // Draw visual effects
+        this.drawVisualEffects();
+        
+        // Update visual effects
+        this.updateVisualEffects();
+    }
+    
+    drawBackground() {
+        // Ground
+        this.ctx.fillStyle = '#DEB887';
+        this.ctx.fillRect(0, this.canvas.height - 50, this.canvas.width, 50);
+        
+        // Sun
+        this.ctx.fillStyle = '#FFD700';
+        this.ctx.beginPath();
+        this.ctx.arc(this.canvas.width - 80, 80, 40, 0, Math.PI * 2);
+        this.ctx.fill();
+    }
+    
+    drawPlayer(player, direction) {
+        // Draw body
+        this.ctx.fillStyle = '#8B4513';
+        this.ctx.fillRect(player.x, player.y, player.width, player.height);
+        
+        // Draw head
+        this.ctx.fillStyle = '#FDBCB4';
+        this.ctx.fillRect(player.x + 15, player.y - 20, 30, 25);
+        
+        // Draw hat
+        this.ctx.fillStyle = '#2F1B14';
+        this.ctx.fillRect(player.x + 10, player.y - 25, 40, 8);
+        this.ctx.fillRect(player.x + 15, player.y - 30, 30, 8);
+        
+        // Draw gun
+        this.ctx.fillStyle = '#444444';
+        const gunLength = 40;
+        const gunX = direction === 1 ? player.x + player.width : player.x;
+        this.ctx.fillRect(gunX, player.y + 20, gunLength * direction, 6);
+    }
+    
+    drawVisualEffects() {
+        this.muzzleFlashes.forEach(flash => flash.draw(this.ctx));
+        this.bulletTrails.forEach(trail => trail.draw(this.ctx));
+    }
+    
+    updateVisualEffects() {
+        // Update muzzle flashes
+        for (let i = this.muzzleFlashes.length - 1; i >= 0; i--) {
+            if (!this.muzzleFlashes[i].update()) {
+                this.muzzleFlashes.splice(i, 1);
+            }
+        }
+        
+        // Update bullet trails
+        for (let i = this.bulletTrails.length - 1; i >= 0; i--) {
+            if (!this.bulletTrails[i].update()) {
+                this.bulletTrails.splice(i, 1);
+            }
+        }
+    }
+    
+    startGameLoop() {
+        const gameLoop = () => {
+            this.draw();
+            requestAnimationFrame(gameLoop);
+        };
+        gameLoop();
+    }
+    
+    // ================================
+    // 🎮 PLAYER INPUT SECTION
+    // ================================
+    
+    initializeEventListeners() {
+        // Keyboard input
+        document.addEventListener('keydown', (e) => {
+            this.keys[e.key.toLowerCase()] = true;
+            this.handleInput(e.key.toLowerCase());
+        });
+        
+        document.addEventListener('keyup', (e) => {
+            this.keys[e.key.toLowerCase()] = false;
+        });
+        
+        // Play Again button
+        this.playAgainBtn.addEventListener('click', () => {
+            this.reset();
+        });
+    }
+    
+    handleInput(key) {
+        if (this.gameState === this.GAME_STATES.WAITING) {
+            if (key === 'a' || key === 'l') {
+                this.startCountdown();
+            }
+        } else if (this.gameState === this.GAME_STATES.READY) {
+            if (key === 'a' && !this.player1.hasShot) {
+                this.shootPlayer(this.player1, 1);
+            } else if (key === 'l' && !this.player2.hasShot) {
+                this.shootPlayer(this.player2, -1);
+            }
+        } else {
+            // Handle early shots with explicit feedback
+            if (key === 'a' || key === 'l') {
+                const playerName = key === 'a' ? 'Player 1' : 'Player 2';
+                console.warn(`${playerName} shot too early! Current state: ${this.gameState}`);
+            }
+        }
+    }
+    
+    shootPlayer(player, direction) {
+        // Extra safety check: Prevent shooting if not in 'ready' state
+        if (this.gameState !== this.GAME_STATES.READY) {
+            console.warn('Early shot attempt blocked - game not ready');
+            return;
+        }
+        
+        player.hasShot = true;
+        player.shotTime = Date.now();
+        
+        // Play gunshot sound effect (only for valid shots after "FIRE!")
+        this.playGunshotSound();
+        
+        // Create muzzle flash
+        const muzzleFlash = new MuzzleFlash(player.gunX, player.gunY, direction);
+        this.muzzleFlashes.push(muzzleFlash);
+        
+        // Create bullet trail
+        const startX = player.gunX;
+        const startY = player.gunY;
+        const endX = direction === 1 ? this.canvas.width - 50 : 50;
+        const endY = startY + (Math.random() - 0.5) * 40; // Slight random trajectory
+        
+        const bulletTrail = new BulletTrail(startX, startY, endX, endY);
+        this.bulletTrails.push(bulletTrail);
+        
+        this.checkGameEnd();
+    }
+    
+    // ================================
+    // 🔊 AUDIO HANDLING SECTION
+    // ================================
+    
+    initializeAudio() {
+        this.audioLoaded = false;
+        this.audioError = false;
+        this.audioLoadAttempted = false;
+        
+        this.gunshotSound = new Audio('assets/gunshot.mp3');
+        this.gunshotSound.preload = 'auto';
+        this.gunshotSound.volume = 0.7;
+        
+        this.setupAudioEventListeners();
+        this.loadAudio();
+    }
+    
+    setupAudioEventListeners() {
+        this.gunshotSound.addEventListener('canplaythrough', () => {
+            this.audioLoaded = true;
+            this.audioError = false;
+            console.log('🔊 Gunshot sound loaded successfully');
+        });
+        
+        this.gunshotSound.addEventListener('error', (e) => {
+            this.audioError = true;
+            this.audioLoaded = false;
+            console.warn('🔇 Gunshot sound file failed to load:', e.type, 'Game will continue without sound.');
+        });
+        
+        this.gunshotSound.addEventListener('loadstart', () => {
+            this.audioLoadAttempted = true;
+            console.log('⏳ Starting to load gunshot sound...');
+        });
+        
+        this.gunshotSound.addEventListener('loadeddata', () => {
+            console.log('📦 Gunshot sound data loaded');
+        });
+    }
+    
+    loadAudio() {
+        try {
+            this.gunshotSound.load();
+        } catch (error) {
+            console.warn('❌ Failed to initiate audio loading:', error.message);
+            this.audioError = true;
+        }
+    }
+    
+    playGunshotSound() {
+        // Check if audio is available and loaded
+        if (this.audioError) {
+            console.warn('🔇 Cannot play gunshot sound - audio failed to load');
+            return;
+        }
+        
+        if (!this.audioLoaded && this.audioLoadAttempted) {
+            console.warn('⏳ Cannot play gunshot sound - audio still loading');
+            return;
+        }
+        
+        if (!this.audioLoadAttempted) {
+            console.warn('❌ Cannot play gunshot sound - audio not initialized');
+            return;
+        }
+        
+        try {
+            // Check if audio element is in a valid state
+            if (this.gunshotSound.readyState < 2) { // HAVE_CURRENT_DATA
+                console.warn('📊 Cannot play gunshot sound - insufficient audio data loaded');
+                return;
+            }
+            
+            // Reset the audio to the beginning in case it's already played
+            this.gunshotSound.currentTime = 0;
+            
+            // Play the sound
+            const playPromise = this.gunshotSound.play();
+            
+            // Handle promise rejection (modern browsers require user interaction first)
+            if (playPromise !== undefined) {
+                playPromise.then(() => {
+                    console.log('🔊 Gunshot sound played successfully');
+                }).catch(error => {
+                    if (error.name === 'NotAllowedError') {
+                        console.warn('🚫 Gunshot sound blocked by browser - user interaction required first');
+                    } else if (error.name === 'AbortError') {
+                        console.warn('⏹️ Gunshot sound playback aborted');
+                    } else {
+                        console.warn('❌ Could not play gunshot sound:', error.name, error.message);
+                    }
+                });
+            }
+        } catch (error) {
+            console.warn('💥 Error attempting to play gunshot sound:', error.message);
+            
+            // If there's a critical error, mark audio as failed
+            if (error.name === 'InvalidStateError' || error.name === 'NotSupportedError') {
+                this.audioError = true;
+                console.warn('🔴 Audio marked as failed due to critical error');
+            }
+        }
+    }
+    
+    getAudioStatus() {
+        return {
+            loaded: this.audioLoaded,
+            error: this.audioError,
+            loadAttempted: this.audioLoadAttempted,
+            readyState: this.gunshotSound.readyState,
+            networkState: this.gunshotSound.networkState,
+            currentTime: this.gunshotSound.currentTime,
+            duration: this.gunshotSound.duration || 'unknown'
+        };
+    }
+    
+    retryAudioLoad() {
+        if (this.audioError && this.audioLoadAttempted) {
+            console.log('🔄 Retrying audio load...');
+            this.audioError = false;
+            this.audioLoaded = false;
+            
+            try {
+                this.gunshotSound.load();
+            } catch (error) {
+                console.warn('❌ Audio retry failed:', error.message);
+                this.audioError = true;
+            }
+        }
+    }
+    
+    // ================================
+    // 🔄 RESET AND UI CONTROLS SECTION
+    // ================================
+    
+    startCountdown() {
+        this.gameState = this.GAME_STATES.COUNTDOWN;
+        this.countdownValue = this.COUNTDOWN_DURATION;
+        this.countdownTimer = Date.now();
+        this.countdown();
+    }
+    
+    countdown() {
+        if (this.countdownValue > 0) {
+            this.countdownElement.textContent = this.countdownValue;
+            this.countdownValue--;
+            this.countdownTimeoutId = setTimeout(() => this.countdown(), 1000);
+        } else {
+            this.countdownElement.textContent = 'FIRE!';
+            this.gameState = this.GAME_STATES.READY;
+            this.gameEndTimeoutId = setTimeout(() => {
+                if (this.gameState === this.GAME_STATES.READY) {
+                    // Nobody shot in time
+                    this.gameState = this.GAME_STATES.FINISHED;
+                    this.resultElement.textContent = 'Too slow!';
+                    this.playAgainBtn.classList.add('show');
+                }
+            }, this.GAME_TIMEOUT);
+        }
+    }
+    
+    checkGameEnd() {
+        if (this.player1.hasShot || this.player2.hasShot) {
+            this.gameState = this.GAME_STATES.FINISHED;
+            
+            if (this.player1.hasShot && this.player2.hasShot) {
+                // Both shot, determine winner by time
+                const timeDiff = Math.abs(this.player1.shotTime - this.player2.shotTime);
+                if (timeDiff < 50) { // Within 50ms is a draw
+                    this.resultElement.textContent = 'Draw!';
+                } else if (this.player1.shotTime < this.player2.shotTime) {
+                    this.resultElement.textContent = 'Player 1 Wins!';
+                } else {
+                    this.resultElement.textContent = 'Player 2 Wins!';
+                }
+            } else if (this.player1.hasShot) {
+                this.resultElement.textContent = 'Player 1 Wins!';
+            } else {
+                this.resultElement.textContent = 'Player 2 Wins!';
+            }
+            
+            // Show the Play Again button
+            this.playAgainBtn.classList.add('show');
+        }
+    }
+    
+    reset() {
+        // Clear any pending timeouts/intervals
+        this.clearTimeouts();
+        
+        // Reset game state variables
+        this.gameState = this.GAME_STATES.WAITING;
+        this.countdownValue = this.COUNTDOWN_DURATION;
+        this.countdownTimer = 0;
+        
+        // Reset player states
+        this.resetPlayers();
+        
+        // Clear and reset UI elements
+        this.resetUI();
+        
+        // Clear all visual effects arrays
+        this.clearVisualEffects();
+        
+        // Reset audio
+        this.resetAudio();
+        
+        // Clear canvas explicitly (will be redrawn in next frame)
+        this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+        
+        console.log('🔄 Game reset successfully');
+    }
+    
+    clearTimeouts() {
+        if (this.countdownTimeoutId) {
+            clearTimeout(this.countdownTimeoutId);
+            this.countdownTimeoutId = null;
+        }
+        if (this.gameEndTimeoutId) {
+            clearTimeout(this.gameEndTimeoutId);
+            this.gameEndTimeoutId = null;
+        }
+    }
+    
+    resetPlayers() {
+        this.player1.hasShot = false;
+        this.player1.shotTime = 0;
+        this.player2.hasShot = false;
+        this.player2.shotTime = 0;
+    }
+    
+    resetUI() {
+        this.countdownElement.textContent = 'Press A or L to start!';
+        this.resultElement.textContent = '';
+        this.playAgainBtn.classList.remove('show');
+    }
+    
+    clearVisualEffects() {
+        this.muzzleFlashes.length = 0;
+        this.bulletTrails.length = 0;
+    }
+    
+    resetAudio() {
+        try {
+            if (!this.audioError && this.gunshotSound.readyState >= 1) { // HAVE_METADATA
+                this.gunshotSound.pause();
+                this.gunshotSound.currentTime = 0;
+                console.log('🔊 Audio reset successfully');
+            } else if (this.audioError) {
+                console.warn('🔇 Skipping audio reset - audio is in error state');
+            } else {
+                console.warn('⏳ Skipping audio reset - audio not ready');
+            }
+        } catch (error) {
+            // Ignore audio reset errors but log them for debugging
+            console.warn('⚠️ Audio reset warning:', error.message);
+            
+            // If reset fails critically, mark audio as having issues
+            if (error.name === 'InvalidStateError') {
+                console.warn('🔴 Audio may be in an invalid state');
+            }
+        }
+    }
 }
 
-// Game state
-let gameState = 'waiting'; // 'waiting', 'countdown', 'ready', 'finished'
-let countdownTimer = 0;
-let countdownValue = 3;
-
-// Timeout tracking for cleanup
-let countdownTimeoutId = null;
-let gameEndTimeoutId = null;
-
-// Players
-const player1 = {
-    x: 150,
-    y: 250,
-    width: 60,
-    height: 80,
-    gunX: 200,
-    gunY: 270,
-    hasShot: false,
-    shotTime: 0
-};
-
-const player2 = {
-    x: 590,
-    y: 250,
-    width: 60,
-    height: 80,
-    gunX: 600,
-    gunY: 270,
-    hasShot: false,
-    shotTime: 0
-};
-
-// Visual effects arrays
-const muzzleFlashes = [];
-const bulletTrails = [];
+// ================================
+// ✨ VISUAL EFFECTS CLASSES
+// ================================
 
 // Enhanced Muzzle flash class with improved visuals and smooth animations
 class MuzzleFlash {
@@ -110,7 +543,7 @@ class MuzzleFlash {
         return elapsed < this.duration;
     }
 
-    draw() {
+    draw(ctx) {
         const elapsed = Date.now() - this.startTime;
         const progress = elapsed / this.duration;
         
@@ -233,7 +666,7 @@ class BulletTrail {
         return elapsed < this.duration;
     }
 
-    draw() {
+    draw(ctx) {
         const elapsed = Date.now() - this.startTime;
         const progress = elapsed / this.duration;
         const alpha = 1 - progress;
@@ -263,340 +696,17 @@ class BulletTrail {
     }
 }
 
-// Input handling
-const keys = {};
-document.addEventListener('keydown', (e) => {
-    keys[e.key.toLowerCase()] = true;
-    handleInput(e.key.toLowerCase());
+// ================================
+// 🚀 GAME INITIALIZATION
+// ================================
+
+// Initialize game when DOM is loaded
+document.addEventListener('DOMContentLoaded', () => {
+    const game = new DuelGame();
+    
+    // Expose game instance globally for debugging and testing
+    window.duelGame = game;
+    
+    console.log('🎮 Wild West Duel Game ready to play!');
+    console.log('🔧 Access game instance via window.duelGame for debugging');
 });
-
-document.addEventListener('keyup', (e) => {
-    keys[e.key.toLowerCase()] = false;
-});
-
-// Play Again button event listener
-playAgainBtn.addEventListener('click', () => {
-    resetGame();
-});
-
-function handleInput(key) {
-    if (gameState === 'waiting') {
-        if (key === 'a' || key === 'l') {
-            startCountdown();
-        }
-    } else if (gameState === 'ready') {
-        if (key === 'a' && !player1.hasShot) {
-            shootPlayer(player1, 1);
-        } else if (key === 'l' && !player2.hasShot) {
-            shootPlayer(player2, -1);
-        }
-    } else {
-        // Handle early shots with explicit feedback
-        if (key === 'a' || key === 'l') {
-            const playerName = key === 'a' ? 'Player 1' : 'Player 2';
-            console.warn(`${playerName} shot too early! Current state: ${gameState}`);
-            
-            // Optional: Could add visual feedback here for early shots
-            // e.g., flash red border, show "TOO EARLY!" message, etc.
-        }
-    }
-}
-
-function shootPlayer(player, direction) {
-    // Extra safety check: Prevent shooting if not in 'ready' state
-    if (gameState !== 'ready') {
-        console.warn('Early shot attempt blocked - game not ready');
-        return;
-    }
-    
-    player.hasShot = true;
-    player.shotTime = Date.now();
-    
-    // Play gunshot sound effect (only for valid shots after "FIRE!")
-    playGunshotSound();
-    
-    // Create muzzle flash
-    const muzzleFlash = new MuzzleFlash(player.gunX, player.gunY, direction);
-    muzzleFlashes.push(muzzleFlash);
-    
-    // Create bullet trail
-    const startX = player.gunX;
-    const startY = player.gunY;
-    const endX = direction === 1 ? canvas.width - 50 : 50;
-    const endY = startY + (Math.random() - 0.5) * 40; // Slight random trajectory
-    
-    const bulletTrail = new BulletTrail(startX, startY, endX, endY);
-    bulletTrails.push(bulletTrail);
-    
-    checkGameEnd();
-}
-
-function playGunshotSound() {
-    // Check if audio is available and loaded
-    if (audioError) {
-        console.warn('Cannot play gunshot sound - audio failed to load');
-        return;
-    }
-    
-    if (!audioLoaded && audioLoadAttempted) {
-        console.warn('Cannot play gunshot sound - audio still loading');
-        return;
-    }
-    
-    if (!audioLoadAttempted) {
-        console.warn('Cannot play gunshot sound - audio not initialized');
-        return;
-    }
-    
-    try {
-        // Check if audio element is in a valid state
-        if (gunshotSound.readyState < 2) { // HAVE_CURRENT_DATA
-            console.warn('Cannot play gunshot sound - insufficient audio data loaded');
-            return;
-        }
-        
-        // Reset the audio to the beginning in case it's already played
-        gunshotSound.currentTime = 0;
-        
-        // Play the sound
-        const playPromise = gunshotSound.play();
-        
-        // Handle promise rejection (modern browsers require user interaction first)
-        if (playPromise !== undefined) {
-            playPromise.then(() => {
-                console.log('Gunshot sound played successfully');
-            }).catch(error => {
-                if (error.name === 'NotAllowedError') {
-                    console.warn('Gunshot sound blocked by browser - user interaction required first');
-                } else if (error.name === 'AbortError') {
-                    console.warn('Gunshot sound playback aborted');
-                } else {
-                    console.warn('Could not play gunshot sound:', error.name, error.message);
-                }
-            });
-        }
-    } catch (error) {
-        console.warn('Error attempting to play gunshot sound:', error.message);
-        
-        // If there's a critical error, mark audio as failed
-        if (error.name === 'InvalidStateError' || error.name === 'NotSupportedError') {
-            audioError = true;
-            console.warn('Audio marked as failed due to critical error');
-        }
-    }
-}
-
-// Audio diagnostics and retry function
-function getAudioStatus() {
-    return {
-        loaded: audioLoaded,
-        error: audioError,
-        loadAttempted: audioLoadAttempted,
-        readyState: gunshotSound.readyState,
-        networkState: gunshotSound.networkState,
-        currentTime: gunshotSound.currentTime,
-        duration: gunshotSound.duration || 'unknown'
-    };
-}
-
-// Optional: Function to retry audio loading if it failed
-function retryAudioLoad() {
-    if (audioError && audioLoadAttempted) {
-        console.log('Retrying audio load...');
-        audioError = false;
-        audioLoaded = false;
-        
-        try {
-            gunshotSound.load();
-        } catch (error) {
-            console.warn('Audio retry failed:', error.message);
-            audioError = true;
-        }
-    }
-}
-
-function startCountdown() {
-    gameState = 'countdown';
-    countdownValue = 3;
-    countdownTimer = Date.now();
-    countdown();
-}
-
-function countdown() {
-    if (countdownValue > 0) {
-        countdownElement.textContent = countdownValue;
-        countdownValue--;
-        countdownTimeoutId = setTimeout(countdown, 1000);
-    } else {
-        countdownElement.textContent = 'FIRE!';
-        gameState = 'ready';
-        gameEndTimeoutId = setTimeout(() => {
-            if (gameState === 'ready') {
-                // Nobody shot in time
-                gameState = 'finished';
-                resultElement.textContent = 'Too slow!';
-                playAgainBtn.classList.add('show');
-            }
-        }, 2000);
-    }
-}
-
-function checkGameEnd() {
-    if (player1.hasShot || player2.hasShot) {
-        gameState = 'finished';
-        
-        if (player1.hasShot && player2.hasShot) {
-            // Both shot, determine winner by time
-            const timeDiff = Math.abs(player1.shotTime - player2.shotTime);
-            if (timeDiff < 50) { // Within 50ms is a draw
-                resultElement.textContent = 'Draw!';
-            } else if (player1.shotTime < player2.shotTime) {
-                resultElement.textContent = 'Player 1 Wins!';
-            } else {
-                resultElement.textContent = 'Player 2 Wins!';
-            }
-        } else if (player1.hasShot) {
-            resultElement.textContent = 'Player 1 Wins!';
-        } else {
-            resultElement.textContent = 'Player 2 Wins!';
-        }
-        
-        // Show the Play Again button
-        playAgainBtn.classList.add('show');
-    }
-}
-
-function resetGame() {
-    // Clear any pending timeouts/intervals
-    if (countdownTimeoutId) {
-        clearTimeout(countdownTimeoutId);
-        countdownTimeoutId = null;
-    }
-    if (gameEndTimeoutId) {
-        clearTimeout(gameEndTimeoutId);
-        gameEndTimeoutId = null;
-    }
-    
-    // Reset game state variables
-    gameState = 'waiting';
-    countdownValue = 3;
-    countdownTimer = 0;
-    
-    // Reset player states
-    player1.hasShot = false;
-    player1.shotTime = 0;
-    player2.hasShot = false;
-    player2.shotTime = 0;
-    
-    // Clear and reset UI elements
-    countdownElement.textContent = 'Press A or L to start!';
-    resultElement.textContent = '';
-    
-    // Hide the result and play again button
-    playAgainBtn.classList.remove('show');
-    
-    // Clear all visual effects arrays
-    muzzleFlashes.length = 0;
-    bulletTrails.length = 0;
-    
-    // Reset audio (stop any playing sounds)
-    try {
-        if (!audioError && gunshotSound.readyState >= 1) { // HAVE_METADATA
-            gunshotSound.pause();
-            gunshotSound.currentTime = 0;
-            console.log('Audio reset successfully');
-        } else if (audioError) {
-            console.warn('Skipping audio reset - audio is in error state');
-        } else {
-            console.warn('Skipping audio reset - audio not ready');
-        }
-    } catch (error) {
-        // Ignore audio reset errors but log them for debugging
-        console.warn('Audio reset warning:', error.message);
-        
-        // If reset fails critically, mark audio as having issues
-        if (error.name === 'InvalidStateError') {
-            console.warn('Audio may be in an invalid state');
-        }
-    }
-    
-    // Clear canvas explicitly (will be redrawn in next frame)
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    
-    // Note: Event listeners are managed globally and don't need rebinding
-    // The keydown/keyup listeners are attached once at startup and handle
-    // all game states appropriately based on the current gameState variable
-}
-
-function drawPlayer(player, direction) {
-    ctx.fillStyle = '#8B4513';
-    
-    // Draw body
-    ctx.fillRect(player.x, player.y, player.width, player.height);
-    
-    // Draw head
-    ctx.fillStyle = '#FDBCB4';
-    ctx.fillRect(player.x + 15, player.y - 20, 30, 25);
-    
-    // Draw hat
-    ctx.fillStyle = '#2F1B14';
-    ctx.fillRect(player.x + 10, player.y - 25, 40, 8);
-    ctx.fillRect(player.x + 15, player.y - 30, 30, 8);
-    
-    // Draw gun
-    ctx.fillStyle = '#444444';
-    const gunLength = 40;
-    const gunX = direction === 1 ? player.x + player.width : player.x;
-    ctx.fillRect(gunX, player.y + 20, gunLength * direction, 6);
-}
-
-function updateVisualEffects() {
-    // Update muzzle flashes
-    for (let i = muzzleFlashes.length - 1; i >= 0; i--) {
-        if (!muzzleFlashes[i].update()) {
-            muzzleFlashes.splice(i, 1);
-        }
-    }
-    
-    // Update bullet trails
-    for (let i = bulletTrails.length - 1; i >= 0; i--) {
-        if (!bulletTrails[i].update()) {
-            bulletTrails.splice(i, 1);
-        }
-    }
-}
-
-function draw() {
-    // Clear canvas
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    
-    // Draw background elements
-    ctx.fillStyle = '#DEB887';
-    ctx.fillRect(0, canvas.height - 50, canvas.width, 50); // Ground
-    
-    // Draw sun
-    ctx.fillStyle = '#FFD700';
-    ctx.beginPath();
-    ctx.arc(canvas.width - 80, 80, 40, 0, Math.PI * 2);
-    ctx.fill();
-    
-    // Draw players
-    drawPlayer(player1, 1);
-    drawPlayer(player2, -1);
-    
-    // Draw visual effects
-    muzzleFlashes.forEach(flash => flash.draw());
-    bulletTrails.forEach(trail => trail.draw());
-    
-    // Update visual effects
-    updateVisualEffects();
-}
-
-function gameLoop() {
-    draw();
-    requestAnimationFrame(gameLoop);
-}
-
-// Initialize game
-resetGame();
-gameLoop();
