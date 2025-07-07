@@ -86,15 +86,23 @@ const player2 = {
 const muzzleFlashes = [];
 const bulletTrails = [];
 
-// Muzzle flash class
+// Enhanced Muzzle flash class with improved visuals and smooth animations
 class MuzzleFlash {
     constructor(x, y, direction) {
         this.x = x;
         this.y = y;
         this.direction = direction; // 1 for right, -1 for left
         this.startTime = Date.now();
-        this.duration = 200; // 200ms as requested
-        this.maxSize = 30;
+        this.duration = 200; // 200ms duration
+        this.maxSize = 50; // Increased from 30 for more noticeable flash
+        this.maxRayLength = 80; // Length of flash rays
+        this.rayCount = 12; // Number of flash rays
+        
+        // Random angles for each ray for more dynamic appearance
+        this.rayAngles = [];
+        for (let i = 0; i < this.rayCount; i++) {
+            this.rayAngles.push((i / this.rayCount) * Math.PI * 2 + (Math.random() - 0.5) * 0.3);
+        }
     }
 
     update() {
@@ -105,34 +113,105 @@ class MuzzleFlash {
     draw() {
         const elapsed = Date.now() - this.startTime;
         const progress = elapsed / this.duration;
-        const alpha = 1 - progress;
-        const size = this.maxSize * (1 - progress * 0.5);
+        
+        // Enhanced easing function for smoother fade-out
+        const easeOutQuart = 1 - Math.pow(1 - progress, 4);
+        const alpha = 1 - easeOutQuart;
+        const size = this.maxSize * (1 - easeOutQuart * 0.3); // Less dramatic size reduction
+        const rayLength = this.maxRayLength * (1 - easeOutQuart * 0.5);
 
         ctx.save();
+        
+        // Draw flash rays first (behind the main flash)
+        ctx.globalAlpha = alpha * 0.8;
+        ctx.strokeStyle = '#FFFFFF';
+        ctx.lineWidth = 6; // Thicker rays for more visibility
+        ctx.lineCap = 'round';
+        
+        for (let i = 0; i < this.rayCount; i++) {
+            const angle = this.rayAngles[i];
+            const rayStartX = this.x + Math.cos(angle) * size * 0.3;
+            const rayStartY = this.y + Math.sin(angle) * size * 0.3;
+            const rayEndX = this.x + Math.cos(angle) * rayLength;
+            const rayEndY = this.y + Math.sin(angle) * rayLength;
+            
+            // Create gradient for each ray
+            const rayGradient = ctx.createLinearGradient(rayStartX, rayStartY, rayEndX, rayEndY);
+            rayGradient.addColorStop(0, '#FFFFFF');
+            rayGradient.addColorStop(0.7, '#FFFF00');
+            rayGradient.addColorStop(1, 'rgba(255, 255, 0, 0)');
+            
+            ctx.strokeStyle = rayGradient;
+            ctx.beginPath();
+            ctx.moveTo(rayStartX, rayStartY);
+            ctx.lineTo(rayEndX, rayEndY);
+            ctx.stroke();
+        }
+        
+        // Draw outer glow ring
+        ctx.globalAlpha = alpha * 0.3;
+        const outerGlow = ctx.createRadialGradient(this.x, this.y, 0, this.x, this.y, size * 1.5);
+        outerGlow.addColorStop(0, 'rgba(255, 255, 255, 0.8)');
+        outerGlow.addColorStop(0.4, 'rgba(255, 255, 0, 0.6)');
+        outerGlow.addColorStop(0.7, 'rgba(255, 165, 0, 0.3)');
+        outerGlow.addColorStop(1, 'rgba(255, 0, 0, 0)');
+        
+        ctx.fillStyle = outerGlow;
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, size * 1.5, 0, Math.PI * 2);
+        ctx.fill();
+        
+        // Main bright flash core with enhanced gradient
         ctx.globalAlpha = alpha;
+        const coreGradient = ctx.createRadialGradient(this.x, this.y, 0, this.x, this.y, size);
+        coreGradient.addColorStop(0, '#FFFFFF');      // Pure white center
+        coreGradient.addColorStop(0.1, '#FFFF99');    // Light yellow
+        coreGradient.addColorStop(0.3, '#FFFF00');    // Bright yellow
+        coreGradient.addColorStop(0.6, '#FF8800');    // Orange
+        coreGradient.addColorStop(0.85, '#FF4400');   // Red-orange
+        coreGradient.addColorStop(1, '#CC0000');      // Dark red
         
-        // Bright flash circles
-        const gradient = ctx.createRadialGradient(this.x, this.y, 0, this.x, this.y, size);
-        gradient.addColorStop(0, '#FFFF00');
-        gradient.addColorStop(0.3, '#FF6600');
-        gradient.addColorStop(1, '#FF0000');
-        
-        ctx.fillStyle = gradient;
+        ctx.fillStyle = coreGradient;
         ctx.beginPath();
         ctx.arc(this.x, this.y, size, 0, Math.PI * 2);
         ctx.fill();
         
-        // Add sparkle effect with small circles
-        for (let i = 0; i < 6; i++) {
-            const angle = (i / 6) * Math.PI * 2;
-            const sparkleX = this.x + Math.cos(angle) * size * 0.7;
-            const sparkleY = this.y + Math.sin(angle) * size * 0.7;
+        // Enhanced sparkle effect with more particles and better distribution
+        ctx.globalAlpha = alpha;
+        const sparkleCount = 8; // Increased sparkle count
+        for (let i = 0; i < sparkleCount; i++) {
+            const angle = (i / sparkleCount) * Math.PI * 2 + (elapsed * 0.01); // Subtle rotation
+            const distance = size * (0.8 + Math.sin(elapsed * 0.02 + i) * 0.2); // Pulsing effect
+            const sparkleX = this.x + Math.cos(angle) * distance;
+            const sparkleY = this.y + Math.sin(angle) * distance;
+            const sparkleSize = size * (0.08 + Math.sin(elapsed * 0.03 + i * 2) * 0.02);
             
-            ctx.fillStyle = '#FFFFFF';
+            // Create sparkle gradient
+            const sparkleGradient = ctx.createRadialGradient(
+                sparkleX, sparkleY, 0, 
+                sparkleX, sparkleY, sparkleSize * 2
+            );
+            sparkleGradient.addColorStop(0, '#FFFFFF');
+            sparkleGradient.addColorStop(0.5, '#FFFF99');
+            sparkleGradient.addColorStop(1, 'rgba(255, 255, 255, 0)');
+            
+            ctx.fillStyle = sparkleGradient;
             ctx.beginPath();
-            ctx.arc(sparkleX, sparkleY, size * 0.1, 0, Math.PI * 2);
+            ctx.arc(sparkleX, sparkleY, sparkleSize, 0, Math.PI * 2);
             ctx.fill();
         }
+        
+        // Add inner white-hot center
+        ctx.globalAlpha = alpha * 0.9;
+        const innerCore = ctx.createRadialGradient(this.x, this.y, 0, this.x, this.y, size * 0.3);
+        innerCore.addColorStop(0, '#FFFFFF');
+        innerCore.addColorStop(0.6, 'rgba(255, 255, 255, 0.8)');
+        innerCore.addColorStop(1, 'rgba(255, 255, 255, 0)');
+        
+        ctx.fillStyle = innerCore;
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, size * 0.3, 0, Math.PI * 2);
+        ctx.fill();
         
         ctx.restore();
     }
