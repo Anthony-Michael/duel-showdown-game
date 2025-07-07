@@ -837,6 +837,227 @@ class SpriteRenderer {
 }
 
 // ================================
+// 🎒 EQUIPMENT MANAGER CLASS
+// ================================
+
+/**
+ * EquipmentManager - Handles player equipment, localStorage persistence, and store functionality
+ */
+class EquipmentManager {
+    constructor() {
+        this.STORAGE_KEY = 'duel_game_equipment';
+        this.DEFAULT_EQUIPMENT = {
+            player1: {
+                equippedCharacterSkin: 'player_default',
+                equippedHat: null,
+                equippedGun: 'gun'
+            },
+            player2: {
+                equippedCharacterSkin: 'player_red',
+                equippedHat: null,
+                equippedGun: 'gun'
+            }
+        };
+        
+        // Available items in the store
+        this.AVAILABLE_ITEMS = {
+            characterSkins: ['player_default', 'player_red', 'player_blue'],
+            hats: ['hat'],
+            guns: ['gun'],
+            overlays: ['overlay']
+        };
+        
+        // Item display names
+        this.ITEM_NAMES = {
+            'player_default': 'Default Cowboy',
+            'player_red': 'Red Bandana',
+            'player_blue': 'Blue Denim',
+            'hat': 'Cowboy Hat',
+            'gun': 'Six-Shooter',
+            'overlay': 'Special Effects'
+        };
+        
+        // Load equipment from localStorage
+        this.equipment = this.loadEquipment();
+        
+        console.log('🎒 Equipment Manager initialized');
+    }
+
+    /**
+     * Load equipment from localStorage
+     */
+    loadEquipment() {
+        try {
+            const stored = localStorage.getItem(this.STORAGE_KEY);
+            if (stored) {
+                const parsed = JSON.parse(stored);
+                // Merge with defaults to ensure all properties exist
+                return {
+                    player1: { ...this.DEFAULT_EQUIPMENT.player1, ...parsed.player1 },
+                    player2: { ...this.DEFAULT_EQUIPMENT.player2, ...parsed.player2 }
+                };
+            }
+        } catch (error) {
+            console.warn('⚠️ Error loading equipment from localStorage:', error);
+        }
+        
+        // Return defaults if loading fails
+        return JSON.parse(JSON.stringify(this.DEFAULT_EQUIPMENT));
+    }
+
+    /**
+     * Save equipment to localStorage
+     */
+    saveEquipment() {
+        try {
+            localStorage.setItem(this.STORAGE_KEY, JSON.stringify(this.equipment));
+            console.log('💾 Equipment saved to localStorage');
+            return true;
+        } catch (error) {
+            console.error('❌ Error saving equipment to localStorage:', error);
+            return false;
+        }
+    }
+
+    /**
+     * Get player's current equipment
+     */
+    getPlayerEquipment(playerNumber) {
+        const playerKey = `player${playerNumber}`;
+        return { ...this.equipment[playerKey] };
+    }
+
+    /**
+     * Equip an item to a player
+     */
+    equipItem(playerNumber, itemType, itemName) {
+        if (playerNumber !== 1 && playerNumber !== 2) {
+            console.warn('⚠️ Invalid player number. Use 1 or 2.');
+            return false;
+        }
+
+        const playerKey = `player${playerNumber}`;
+        const validTypes = ['equippedCharacterSkin', 'equippedHat', 'equippedGun'];
+        
+        if (!validTypes.includes(itemType)) {
+            console.warn(`⚠️ Invalid item type: ${itemType}. Valid types:`, validTypes);
+            return false;
+        }
+
+        // Allow null for optional items (hat can be unequipped)
+        if (itemName !== null && !this.isItemAvailable(itemName)) {
+            console.warn(`⚠️ Item not available: ${itemName}`);
+            return false;
+        }
+
+        const oldItem = this.equipment[playerKey][itemType];
+        this.equipment[playerKey][itemType] = itemName;
+        
+        // Save to localStorage
+        this.saveEquipment();
+        
+        const itemDisplayName = itemName ? this.ITEM_NAMES[itemName] || itemName : 'None';
+        const oldDisplayName = oldItem ? this.ITEM_NAMES[oldItem] || oldItem : 'None';
+        
+        console.log(`🎒 Player ${playerNumber} equipped ${itemType}: ${oldDisplayName} → ${itemDisplayName}`);
+        return true;
+    }
+
+    /**
+     * Unequip an item from a player (set to null)
+     */
+    unequipItem(playerNumber, itemType) {
+        return this.equipItem(playerNumber, itemType, null);
+    }
+
+    /**
+     * Check if an item is available in the store
+     */
+    isItemAvailable(itemName) {
+        return Object.values(this.AVAILABLE_ITEMS).flat().includes(itemName);
+    }
+
+    /**
+     * Get all available items
+     */
+    getAvailableItems() {
+        return { ...this.AVAILABLE_ITEMS };
+    }
+
+    /**
+     * Get item display name
+     */
+    getItemDisplayName(itemName) {
+        return this.ITEM_NAMES[itemName] || itemName;
+    }
+
+    /**
+     * Get equipped items as array for rendering
+     */
+    getEquippedItemsArray(playerNumber) {
+        const equipment = this.getPlayerEquipment(playerNumber);
+        const items = [];
+        
+        // Add equipped items in rendering order
+        if (equipment.equippedHat) items.push(equipment.equippedHat);
+        if (equipment.equippedGun) items.push(equipment.equippedGun);
+        
+        return items;
+    }
+
+    /**
+     * Reset all equipment to defaults
+     */
+    resetAllEquipment() {
+        this.equipment = JSON.parse(JSON.stringify(this.DEFAULT_EQUIPMENT));
+        this.saveEquipment();
+        console.log('🔄 All equipment reset to defaults');
+        return true;
+    }
+
+    /**
+     * Get equipment summary for debugging
+     */
+    getEquipmentSummary() {
+        const summary = {};
+        
+        [1, 2].forEach(playerNum => {
+            const equipment = this.getPlayerEquipment(playerNum);
+            summary[`player${playerNum}`] = {
+                skin: this.getItemDisplayName(equipment.equippedCharacterSkin),
+                hat: equipment.equippedHat ? this.getItemDisplayName(equipment.equippedHat) : 'None',
+                gun: equipment.equippedGun ? this.getItemDisplayName(equipment.equippedGun) : 'None'
+            };
+        });
+        
+        return summary;
+    }
+
+    /**
+     * Quick equip functions for common operations
+     */
+    equipSkin(playerNumber, skinName) {
+        return this.equipItem(playerNumber, 'equippedCharacterSkin', skinName);
+    }
+
+    equipHat(playerNumber, hatName) {
+        return this.equipItem(playerNumber, 'equippedHat', hatName);
+    }
+
+    equipGun(playerNumber, gunName) {
+        return this.equipItem(playerNumber, 'equippedGun', gunName);
+    }
+
+    unequipHat(playerNumber) {
+        return this.unequipItem(playerNumber, 'equippedHat');
+    }
+
+    unequipGun(playerNumber) {
+        return this.unequipItem(playerNumber, 'equippedGun');
+    }
+}
+
+// ================================
 // 🎮 DUEL GAME CLASS
 // ================================
 
@@ -853,6 +1074,7 @@ class DuelGame {
         this.initializeCanvas();
         this.initializeConstants();
         this.initializeSprites();
+        this.initializeEquipment();
         this.initializePatternManager();
         this.initializeGameState();
         this.initializeAudio();
@@ -869,6 +1091,10 @@ class DuelGame {
         this.spriteLoader = new SpriteLoader();
         this.spriteRenderer = new SpriteRenderer(this.spriteLoader);
         this.spritesLoaded = false;
+    }
+
+    initializeEquipment() {
+        this.equipmentManager = new EquipmentManager();
     }
 
     async loadSpritesAndStart() {
@@ -988,14 +1214,32 @@ class DuelGame {
         this.gameEndTimeoutId = null;
         this.patternTimeoutId = null;
         
-        // Updated player objects for sprite-based rendering
+        // Load equipment from EquipmentManager
+        this.updatePlayerEquipment();
+        
+        this.keys = {};
+        this.currentPatterns = { player1: [], player2: [] };
+    }
+
+    /**
+     * Update player equipment from EquipmentManager
+     */
+    updatePlayerEquipment() {
+        const player1Equipment = this.equipmentManager.getPlayerEquipment(1);
+        const player2Equipment = this.equipmentManager.getPlayerEquipment(2);
+        
+        // Updated player objects for sprite-based rendering with equipment
         this.player1 = {
             ...this.PLAYER_CONFIG.player1,
             hasShot: false,
             shotTime: 0,
+            // Equipment properties
+            equippedCharacterSkin: player1Equipment.equippedCharacterSkin,
+            equippedHat: player1Equipment.equippedHat,
+            equippedGun: player1Equipment.equippedGun,
             // Sprite properties
-            currentSkin: this.PLAYER_CONFIG.player1.baseSkin,
-            currentAccessories: [...this.PLAYER_CONFIG.player1.accessories],
+            currentSkin: player1Equipment.equippedCharacterSkin,
+            currentAccessories: this.equipmentManager.getEquippedItemsArray(1),
             scale: this.PLAYER_CONFIG.scale,
             flipX: false, // Player 1 faces right
             // Pattern-related properties
@@ -1009,9 +1253,13 @@ class DuelGame {
             ...this.PLAYER_CONFIG.player2,
             hasShot: false,
             shotTime: 0,
+            // Equipment properties
+            equippedCharacterSkin: player2Equipment.equippedCharacterSkin,
+            equippedHat: player2Equipment.equippedHat,
+            equippedGun: player2Equipment.equippedGun,
             // Sprite properties
-            currentSkin: this.PLAYER_CONFIG.player2.baseSkin,
-            currentAccessories: [...this.PLAYER_CONFIG.player2.accessories],
+            currentSkin: player2Equipment.equippedCharacterSkin,
+            currentAccessories: this.equipmentManager.getEquippedItemsArray(2),
             scale: this.PLAYER_CONFIG.scale,
             flipX: true, // Player 2 faces left
             // Pattern-related properties
@@ -1021,8 +1269,7 @@ class DuelGame {
             lastInputTime: 0
         };
         
-        this.keys = {};
-        this.currentPatterns = { player1: [], player2: [] };
+        console.log('🎒 Player equipment updated from storage');
     }
 
     // ================================
@@ -1436,113 +1683,98 @@ class DuelGame {
     }
     
     // ================================
-    // 🎨 SPRITE AND ACCESSORY SYSTEM
+    // 🎨 EQUIPMENT AND STORE SYSTEM
     // ================================
 
     /**
-     * Change a player's base skin
+     * Equip a character skin to a player
      */
-    changePlayerSkin(playerNumber, skinName) {
-        if (playerNumber !== 1 && playerNumber !== 2) {
-            console.warn('⚠️ Invalid player number. Use 1 or 2.');
-            return false;
+    equipSkin(playerNumber, skinName) {
+        const success = this.equipmentManager.equipSkin(playerNumber, skinName);
+        if (success) {
+            this.updatePlayerEquipment();
         }
-
-        if (!this.spriteLoader.isLoaded(skinName)) {
-            console.warn(`⚠️ Skin '${skinName}' is not loaded.`);
-            return false;
-        }
-
-        const player = playerNumber === 1 ? this.player1 : this.player2;
-        player.currentSkin = skinName;
-        
-        console.log(`🎨 Player ${playerNumber} skin changed to: ${skinName}`);
-        return true;
+        return success;
     }
 
     /**
-     * Add an accessory to a player
+     * Equip a hat to a player
      */
-    addPlayerAccessory(playerNumber, accessoryName) {
-        if (playerNumber !== 1 && playerNumber !== 2) {
-            console.warn('⚠️ Invalid player number. Use 1 or 2.');
-            return false;
+    equipHat(playerNumber, hatName) {
+        const success = this.equipmentManager.equipHat(playerNumber, hatName);
+        if (success) {
+            this.updatePlayerEquipment();
         }
-
-        if (!this.spriteLoader.isLoaded(accessoryName)) {
-            console.warn(`⚠️ Accessory '${accessoryName}' is not loaded.`);
-            return false;
-        }
-
-        const player = playerNumber === 1 ? this.player1 : this.player2;
-        
-        if (!player.currentAccessories.includes(accessoryName)) {
-            player.currentAccessories.push(accessoryName);
-            console.log(`🎒 Added accessory '${accessoryName}' to Player ${playerNumber}`);
-            return true;
-        } else {
-            console.log(`📋 Player ${playerNumber} already has accessory '${accessoryName}'`);
-            return false;
-        }
+        return success;
     }
 
     /**
-     * Remove an accessory from a player
+     * Equip a gun to a player
      */
-    removePlayerAccessory(playerNumber, accessoryName) {
-        if (playerNumber !== 1 && playerNumber !== 2) {
-            console.warn('⚠️ Invalid player number. Use 1 or 2.');
-            return false;
+    equipGun(playerNumber, gunName) {
+        const success = this.equipmentManager.equipGun(playerNumber, gunName);
+        if (success) {
+            this.updatePlayerEquipment();
         }
-
-        const player = playerNumber === 1 ? this.player1 : this.player2;
-        const index = player.currentAccessories.indexOf(accessoryName);
-        
-        if (index > -1) {
-            player.currentAccessories.splice(index, 1);
-            console.log(`🗑️ Removed accessory '${accessoryName}' from Player ${playerNumber}`);
-            return true;
-        } else {
-            console.log(`📋 Player ${playerNumber} doesn't have accessory '${accessoryName}'`);
-            return false;
-        }
+        return success;
     }
 
     /**
-     * Clear all accessories from a player
+     * Unequip a hat from a player
      */
-    clearPlayerAccessories(playerNumber) {
-        if (playerNumber !== 1 && playerNumber !== 2) {
-            console.warn('⚠️ Invalid player number. Use 1 or 2.');
-            return false;
+    unequipHat(playerNumber) {
+        const success = this.equipmentManager.unequipHat(playerNumber);
+        if (success) {
+            this.updatePlayerEquipment();
         }
-
-        const player = playerNumber === 1 ? this.player1 : this.player2;
-        player.currentAccessories = [];
-        console.log(`🧹 Cleared all accessories from Player ${playerNumber}`);
-        return true;
+        return success;
     }
 
     /**
-     * Get current player appearance
+     * Unequip a gun from a player
      */
-    getPlayerAppearance(playerNumber) {
-        if (playerNumber !== 1 && playerNumber !== 2) {
-            console.warn('⚠️ Invalid player number. Use 1 or 2.');
-            return null;
+    unequipGun(playerNumber) {
+        const success = this.equipmentManager.unequipGun(playerNumber);
+        if (success) {
+            this.updatePlayerEquipment();
         }
-
-        const player = playerNumber === 1 ? this.player1 : this.player2;
-        return {
-            skin: player.currentSkin,
-            accessories: [...player.currentAccessories],
-            scale: player.scale,
-            flipX: player.flipX
-        };
+        return success;
     }
 
     /**
-     * Get all available sprites
+     * Get current player equipment
+     */
+    getPlayerEquipment(playerNumber) {
+        return this.equipmentManager.getPlayerEquipment(playerNumber);
+    }
+
+    /**
+     * Get all available items from the store
+     */
+    getAvailableItems() {
+        return this.equipmentManager.getAvailableItems();
+    }
+
+    /**
+     * Get equipment summary for all players
+     */
+    getEquipmentSummary() {
+        return this.equipmentManager.getEquipmentSummary();
+    }
+
+    /**
+     * Reset all equipment to defaults
+     */
+    resetAllEquipment() {
+        const success = this.equipmentManager.resetAllEquipment();
+        if (success) {
+            this.updatePlayerEquipment();
+        }
+        return success;
+    }
+
+    /**
+     * Get all available sprites (for backward compatibility)
      */
     getAvailableSprites() {
         const sprites = this.spriteLoader.SPRITE_PATHS;
@@ -1556,6 +1788,57 @@ class DuelGame {
             sprites: sprites,
             loaded: loaded,
             progress: this.spriteLoader.getLoadingProgress()
+        };
+    }
+
+    /**
+     * Legacy function - use equipSkin instead
+     */
+    changePlayerSkin(playerNumber, skinName) {
+        console.warn('⚠️ changePlayerSkin is deprecated. Use equipSkin instead.');
+        return this.equipSkin(playerNumber, skinName);
+    }
+
+    /**
+     * Legacy function - use equipHat instead
+     */
+    addPlayerAccessory(playerNumber, accessoryName) {
+        console.warn('⚠️ addPlayerAccessory is deprecated. Use equipHat or equipGun instead.');
+        if (accessoryName === 'hat') {
+            return this.equipHat(playerNumber, accessoryName);
+        } else if (accessoryName === 'gun') {
+            return this.equipGun(playerNumber, accessoryName);
+        }
+        return false;
+    }
+
+    /**
+     * Legacy function - use unequipHat or unequipGun instead
+     */
+    removePlayerAccessory(playerNumber, accessoryName) {
+        console.warn('⚠️ removePlayerAccessory is deprecated. Use unequipHat or unequipGun instead.');
+        if (accessoryName === 'hat') {
+            return this.unequipHat(playerNumber);
+        } else if (accessoryName === 'gun') {
+            return this.unequipGun(playerNumber);
+        }
+        return false;
+    }
+
+    /**
+     * Legacy function - use getPlayerEquipment instead
+     */
+    getPlayerAppearance(playerNumber) {
+        console.warn('⚠️ getPlayerAppearance is deprecated. Use getPlayerEquipment instead.');
+        const equipment = this.getPlayerEquipment(playerNumber);
+        if (!equipment) return null;
+        
+        const player = playerNumber === 1 ? this.player1 : this.player2;
+        return {
+            skin: equipment.equippedCharacterSkin,
+            accessories: this.equipmentManager.getEquippedItemsArray(playerNumber),
+            scale: player.scale,
+            flipX: player.flipX
         };
     }
 
@@ -1677,9 +1960,6 @@ class DuelGame {
         this.player1.patternProgress = 0;
         this.player1.isDisqualified = false;
         this.player1.lastInputTime = 0;
-        // Reset sprite properties to defaults
-        this.player1.currentSkin = this.PLAYER_CONFIG.player1.baseSkin;
-        this.player1.currentAccessories = [...this.PLAYER_CONFIG.player1.accessories];
         
         // Reset player 2 state
         this.player2.hasShot = false;
@@ -1688,9 +1968,9 @@ class DuelGame {
         this.player2.patternProgress = 0;
         this.player2.isDisqualified = false;
         this.player2.lastInputTime = 0;
-        // Reset sprite properties to defaults
-        this.player2.currentSkin = this.PLAYER_CONFIG.player2.baseSkin;
-        this.player2.currentAccessories = [...this.PLAYER_CONFIG.player2.accessories];
+        
+        // Update equipment from storage (in case it changed)
+        this.updatePlayerEquipment();
         
         // Reset PatternManager
         this.patternManager.reset();
@@ -1957,49 +2237,121 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     };
 
-    // Sprite system debug functions
-    window.debugSprites = () => {
-        const sprites = window.duelGame.getAvailableSprites();
-        console.log('🖼️ Sprite System Debug:', sprites);
-        return sprites;
+    // Equipment system debug functions
+    window.debugEquipment = () => {
+        const summary = window.duelGame.getEquipmentSummary();
+        console.log('🎒 Equipment System Debug:', summary);
+        return summary;
     };
 
+    window.debugStore = () => {
+        const items = window.duelGame.getAvailableItems();
+        console.log('🏪 Store Inventory:', items);
+        return items;
+    };
+
+    window.equipSkin = (playerNumber, skinName) => {
+        console.log(`🎨 Equipping skin '${skinName}' to Player ${playerNumber}`);
+        return window.duelGame.equipSkin(playerNumber, skinName);
+    };
+
+    window.equipHat = (playerNumber, hatName) => {
+        console.log(`🎩 Equipping hat '${hatName}' to Player ${playerNumber}`);
+        return window.duelGame.equipHat(playerNumber, hatName);
+    };
+
+    window.equipGun = (playerNumber, gunName) => {
+        console.log(`🔫 Equipping gun '${gunName}' to Player ${playerNumber}`);
+        return window.duelGame.equipGun(playerNumber, gunName);
+    };
+
+    window.unequipHat = (playerNumber) => {
+        console.log(`🎩 Unequipping hat from Player ${playerNumber}`);
+        return window.duelGame.unequipHat(playerNumber);
+    };
+
+    window.unequipGun = (playerNumber) => {
+        console.log(`🔫 Unequipping gun from Player ${playerNumber}`);
+        return window.duelGame.unequipGun(playerNumber);
+    };
+
+    window.getPlayerEquipment = (playerNumber) => {
+        const equipment = window.duelGame.getPlayerEquipment(playerNumber);
+        console.log(`👤 Player ${playerNumber} equipment:`, equipment);
+        return equipment;
+    };
+
+    window.resetAllEquipment = () => {
+        console.log('🔄 Resetting all equipment to defaults');
+        return window.duelGame.resetAllEquipment();
+    };
+
+    window.demoStore = () => {
+        console.log('🏪 Equipment Store Demo:');
+        console.log('📋 Available functions:');
+        console.log('  debugEquipment() - Show current equipment for all players');
+        console.log('  debugStore() - Show all available items in store');
+        console.log('  equipSkin(1, "player_blue") - Equip skin to player');
+        console.log('  equipHat(1, "hat") - Equip hat to player');
+        console.log('  equipGun(1, "gun") - Equip gun to player');
+        console.log('  unequipHat(1) - Remove hat from player');
+        console.log('  unequipGun(1) - Remove gun from player');
+        console.log('  getPlayerEquipment(1) - Show player equipment');
+        console.log('  resetAllEquipment() - Reset all to defaults');
+        console.log('');
+        console.log('🎨 Available skins: player_default, player_red, player_blue');
+        console.log('🎩 Available hats: hat');
+        console.log('🔫 Available guns: gun');
+        console.log('✨ Available overlays: overlay');
+        console.log('');
+        console.log('💡 Try: equipSkin(2, "player_blue"); equipHat(1, "hat")');
+        console.log('💾 All changes are saved to localStorage automatically!');
+    };
+
+    // Legacy functions for backward compatibility
     window.changePlayerSkin = (playerNumber, skinName) => {
-        console.log(`🎨 Attempting to change Player ${playerNumber} skin to '${skinName}'`);
-        return window.duelGame.changePlayerSkin(playerNumber, skinName);
+        console.warn('⚠️ changePlayerSkin is deprecated. Use equipSkin instead.');
+        return window.duelGame.equipSkin(playerNumber, skinName);
     };
 
     window.addAccessory = (playerNumber, accessoryName) => {
-        console.log(`🎒 Attempting to add accessory '${accessoryName}' to Player ${playerNumber}`);
-        return window.duelGame.addPlayerAccessory(playerNumber, accessoryName);
+        console.warn('⚠️ addAccessory is deprecated. Use equipHat or equipGun instead.');
+        if (accessoryName === 'hat') {
+            return window.duelGame.equipHat(playerNumber, accessoryName);
+        } else if (accessoryName === 'gun') {
+            return window.duelGame.equipGun(playerNumber, accessoryName);
+        }
+        return false;
     };
 
     window.removeAccessory = (playerNumber, accessoryName) => {
-        console.log(`🗑️ Attempting to remove accessory '${accessoryName}' from Player ${playerNumber}`);
-        return window.duelGame.removePlayerAccessory(playerNumber, accessoryName);
+        console.warn('⚠️ removeAccessory is deprecated. Use unequipHat or unequipGun instead.');
+        if (accessoryName === 'hat') {
+            return window.duelGame.unequipHat(playerNumber);
+        } else if (accessoryName === 'gun') {
+            return window.duelGame.unequipGun(playerNumber);
+        }
+        return false;
     };
 
     window.getPlayerAppearance = (playerNumber) => {
-        const appearance = window.duelGame.getPlayerAppearance(playerNumber);
-        console.log(`👤 Player ${playerNumber} appearance:`, appearance);
-        return appearance;
+        console.warn('⚠️ getPlayerAppearance is deprecated. Use getPlayerEquipment instead.');
+        return window.duelGame.getPlayerEquipment(playerNumber);
+    };
+
+    window.debugSprites = () => {
+        console.warn('⚠️ debugSprites is deprecated. Use debugEquipment instead.');
+        return window.duelGame.debugEquipment();
     };
 
     window.demoSprites = () => {
-        console.log('🎨 Sprite System Demo:');
-        console.log('📋 Available functions:');
-        console.log('  debugSprites() - Show sprite loading status');
-        console.log('  changePlayerSkin(1, "player_blue") - Change player skin');
-        console.log('  addAccessory(1, "hat") - Add accessory to player');
-        console.log('  removeAccessory(1, "gun") - Remove accessory from player');
-        console.log('  getPlayerAppearance(1) - Show current player appearance');
-        console.log('🖼️ Available skins: player_default, player_red, player_blue');
-        console.log('🎒 Available accessories: hat, gun, overlay');
-        console.log('💡 Try: changePlayerSkin(2, "player_blue"); addAccessory(1, "hat")');
+        console.warn('⚠️ demoSprites is deprecated. Use demoStore instead.');
+        return window.demoStore();
     };
     
     console.log('🎮 Wild West Duel Game ready to play!');
     console.log('🔧 Access game instance via window.duelGame for debugging');
     console.log('🔧 Pattern functions: debugInputQueue(), debugPatternManager(), demoInputQueue()');
-    console.log('🎨 Sprite functions: debugSprites(), changePlayerSkin(), addAccessory(), demoSprites()');
+    console.log('🎒 Equipment functions: debugEquipment(), equipSkin(), equipHat(), demoStore()');
+    console.log('💾 Equipment is automatically saved to localStorage!');
 });
