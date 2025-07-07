@@ -623,10 +623,18 @@ class SpriteLoader {
         this.SPRITE_PATHS = {
             // Base character sprites
             player_default: 'assets/sprites/player_default.png',
+            player_cowboy: 'assets/sprites/player_cowboy.png',
+            
+            // Hat accessories
+            hat_fedora: 'assets/sprites/hat_fedora.png',
+            
+            // Gun accessories
+            gun_revolver: 'assets/sprites/gun_revolver.png',
+            gun_laser: 'assets/sprites/gun_laser.png',
+            
+            // Legacy sprites (for backward compatibility)
             player_red: 'assets/sprites/player_red.png',
             player_blue: 'assets/sprites/player_blue.png',
-            
-            // Accessory layers
             hat: 'assets/sprites/hat.png',
             gun: 'assets/sprites/gun.png',
             overlay: 'assets/sprites/overlay.png'
@@ -651,18 +659,49 @@ class SpriteLoader {
             ctx.fillStyle = '#FDBCB4';
             ctx.fillRect(8, 4, 16, 12); // Head
             
-            // Hat
-            ctx.fillStyle = '#2F1B14';
-            ctx.fillRect(6, 2, 20, 4); // Hat brim
-            ctx.fillRect(10, 0, 12, 6); // Hat top
+            // Different styling based on color (indicating different character types)
+            if (color === '#654321') { // Cowboy variant
+                // Vest
+                ctx.fillStyle = '#8B0000';
+                ctx.fillRect(8, 12, 16, 16); // Red vest
+                // Black hat
+                ctx.fillStyle = '#000000';
+                ctx.fillRect(6, 2, 20, 4); // Hat brim
+                ctx.fillRect(10, 0, 12, 6); // Hat top
+            } else {
+                // Regular hat
+                ctx.fillStyle = '#2F1B14';
+                ctx.fillRect(6, 2, 20, 4); // Hat brim
+                ctx.fillRect(10, 0, 12, 6); // Hat top
+            }
         } else if (type === 'gun') {
-            ctx.fillStyle = '#444444';
-            ctx.fillRect(24, 16, 8, 3); // Gun barrel
-            ctx.fillRect(20, 14, 8, 6); // Gun handle
+            if (color === '#00FFFF') { // Laser gun
+                ctx.fillStyle = '#C0C0C0';
+                ctx.fillRect(16, 13, 8, 6); // Silver body
+                ctx.fillStyle = '#00FFFF';
+                ctx.fillRect(20, 15, 10, 2); // Cyan beam
+                ctx.fillStyle = '#FF0000';
+                ctx.fillRect(24, 14, 4, 4); // Red tip
+            } else { // Revolver or regular gun
+                ctx.fillStyle = '#444444';
+                ctx.fillRect(20, 14, 10, 4); // Barrel
+                ctx.fillRect(16, 12, 8, 8); // Cylinder
+                ctx.fillStyle = '#8B4513';
+                ctx.fillRect(12, 16, 6, 4); // Wooden grip
+            }
         } else if (type === 'hat') {
-            ctx.fillStyle = '#8B4513';
-            ctx.fillRect(6, 2, 20, 4); // Hat brim
-            ctx.fillRect(10, 0, 12, 6); // Hat top
+            if (color === '#2F2F2F') { // Fedora
+                ctx.fillStyle = '#2F2F2F';
+                ctx.fillRect(6, 6, 20, 3); // Fedora brim
+                ctx.fillRect(10, 3, 12, 6); // Fedora crown
+                // Band
+                ctx.fillStyle = '#000000';
+                ctx.fillRect(10, 8, 12, 2); // Hat band
+            } else { // Regular cowboy hat
+                ctx.fillStyle = color;
+                ctx.fillRect(6, 2, 20, 4); // Hat brim
+                ctx.fillRect(10, 0, 12, 6); // Hat top
+            }
         }
         
         return canvas.toDataURL('image/png');
@@ -693,11 +732,32 @@ class SpriteLoader {
             img.onerror = () => {
                 console.warn(`⚠️ Failed to load sprite: ${name} from ${path}, using placeholder`);
                 
-                // Create placeholder
-                const placeholderType = name.includes('gun') ? 'gun' : 
-                                       name.includes('hat') ? 'hat' : 'player';
-                const color = name.includes('red') ? '#CD5C5C' : 
-                             name.includes('blue') ? '#4169E1' : '#8B4513';
+                // Create placeholder based on sprite name
+                let placeholderType = 'player';
+                let color = '#8B4513';
+                
+                if (name.includes('gun')) {
+                    placeholderType = 'gun';
+                    if (name.includes('laser')) {
+                        color = '#00FFFF'; // Cyan for laser
+                    } else {
+                        color = '#444444'; // Dark gray for revolver/gun
+                    }
+                } else if (name.includes('hat')) {
+                    placeholderType = 'hat';
+                    color = '#2F2F2F'; // Dark gray for hats
+                } else if (name.includes('player')) {
+                    placeholderType = 'player';
+                    if (name.includes('red')) {
+                        color = '#CD5C5C';
+                    } else if (name.includes('blue')) {
+                        color = '#4169E1';
+                    } else if (name.includes('cowboy')) {
+                        color = '#654321'; // Darker brown for cowboy
+                    } else {
+                        color = '#8B4513'; // Default brown
+                    }
+                }
                 
                 const placeholderImg = new Image();
                 placeholderImg.onload = () => {
@@ -850,30 +910,41 @@ class EquipmentManager {
             player1: {
                 equippedCharacterSkin: 'player_default',
                 equippedHat: null,
-                equippedGun: 'gun'
+                equippedGun: 'gun_revolver'
             },
             player2: {
-                equippedCharacterSkin: 'player_red',
+                equippedCharacterSkin: 'player_cowboy',
                 equippedHat: null,
-                equippedGun: 'gun'
+                equippedGun: 'gun_revolver'
             }
         };
         
         // Available items in the store
         this.AVAILABLE_ITEMS = {
-            characterSkins: ['player_default', 'player_red', 'player_blue'],
-            hats: ['hat'],
-            guns: ['gun'],
+            characterSkins: ['player_default', 'player_cowboy', 'player_red', 'player_blue'],
+            hats: ['hat_fedora', 'hat'],
+            guns: ['gun_revolver', 'gun_laser', 'gun'],
             overlays: ['overlay']
         };
         
         // Item display names
         this.ITEM_NAMES = {
+            // Character skins
             'player_default': 'Default Cowboy',
+            'player_cowboy': 'Classic Cowboy',
             'player_red': 'Red Bandana',
             'player_blue': 'Blue Denim',
+            
+            // Hats
+            'hat_fedora': 'Fedora Hat',
             'hat': 'Cowboy Hat',
+            
+            // Guns
+            'gun_revolver': 'Revolver',
+            'gun_laser': 'Laser Gun',
             'gun': 'Six-Shooter',
+            
+            // Overlays
             'overlay': 'Special Effects'
         };
         
@@ -2299,12 +2370,12 @@ document.addEventListener('DOMContentLoaded', () => {
         console.log('  getPlayerEquipment(1) - Show player equipment');
         console.log('  resetAllEquipment() - Reset all to defaults');
         console.log('');
-        console.log('🎨 Available skins: player_default, player_red, player_blue');
-        console.log('🎩 Available hats: hat');
-        console.log('🔫 Available guns: gun');
+        console.log('🎨 Available skins: player_default, player_cowboy, player_red, player_blue');
+        console.log('🎩 Available hats: hat_fedora, hat');
+        console.log('🔫 Available guns: gun_revolver, gun_laser, gun');
         console.log('✨ Available overlays: overlay');
         console.log('');
-        console.log('💡 Try: equipSkin(2, "player_blue"); equipHat(1, "hat")');
+        console.log('💡 Try: equipSkin(2, "player_cowboy"); equipHat(1, "hat_fedora"); equipGun(1, "gun_laser")');
         console.log('💾 All changes are saved to localStorage automatically!');
     };
 
