@@ -605,6 +605,238 @@ class PatternManager {
 }
 
 // ================================
+// 🖼️ SPRITE LOADER CLASS
+// ================================
+
+/**
+ * SpriteLoader - Manages sprite loading and caching with composite layer support
+ */
+class SpriteLoader {
+    constructor() {
+        this.sprites = new Map();
+        this.loadingPromises = new Map();
+        this.loadedCount = 0;
+        this.totalCount = 0;
+        
+        // Default sprite configuration
+        this.SPRITE_SIZE = 32;
+        this.SPRITE_PATHS = {
+            // Base character sprites
+            player_default: 'assets/sprites/player_default.png',
+            player_red: 'assets/sprites/player_red.png',
+            player_blue: 'assets/sprites/player_blue.png',
+            
+            // Accessory layers
+            hat: 'assets/sprites/hat.png',
+            gun: 'assets/sprites/gun.png',
+            overlay: 'assets/sprites/overlay.png'
+        };
+    }
+
+    /**
+     * Create placeholder sprite as base64 data URI
+     */
+    createPlaceholderSprite(color = '#8B4513', type = 'player') {
+        const canvas = document.createElement('canvas');
+        canvas.width = this.SPRITE_SIZE;
+        canvas.height = this.SPRITE_SIZE;
+        const ctx = canvas.getContext('2d');
+        
+        if (type === 'player') {
+            // Create a simple character sprite
+            ctx.fillStyle = color;
+            ctx.fillRect(4, 8, 24, 24); // Body
+            
+            // Head
+            ctx.fillStyle = '#FDBCB4';
+            ctx.fillRect(8, 4, 16, 12); // Head
+            
+            // Hat
+            ctx.fillStyle = '#2F1B14';
+            ctx.fillRect(6, 2, 20, 4); // Hat brim
+            ctx.fillRect(10, 0, 12, 6); // Hat top
+        } else if (type === 'gun') {
+            ctx.fillStyle = '#444444';
+            ctx.fillRect(24, 16, 8, 3); // Gun barrel
+            ctx.fillRect(20, 14, 8, 6); // Gun handle
+        } else if (type === 'hat') {
+            ctx.fillStyle = '#8B4513';
+            ctx.fillRect(6, 2, 20, 4); // Hat brim
+            ctx.fillRect(10, 0, 12, 6); // Hat top
+        }
+        
+        return canvas.toDataURL('image/png');
+    }
+
+    /**
+     * Load a single sprite
+     */
+    async loadSprite(name, path) {
+        if (this.sprites.has(name)) {
+            return this.sprites.get(name);
+        }
+
+        if (this.loadingPromises.has(name)) {
+            return this.loadingPromises.get(name);
+        }
+
+        const loadPromise = new Promise((resolve, reject) => {
+            const img = new Image();
+            
+            img.onload = () => {
+                this.sprites.set(name, img);
+                this.loadedCount++;
+                console.log(`🖼️ Loaded sprite: ${name} (${this.loadedCount}/${this.totalCount})`);
+                resolve(img);
+            };
+            
+            img.onerror = () => {
+                console.warn(`⚠️ Failed to load sprite: ${name} from ${path}, using placeholder`);
+                
+                // Create placeholder
+                const placeholderType = name.includes('gun') ? 'gun' : 
+                                       name.includes('hat') ? 'hat' : 'player';
+                const color = name.includes('red') ? '#CD5C5C' : 
+                             name.includes('blue') ? '#4169E1' : '#8B4513';
+                
+                const placeholderImg = new Image();
+                placeholderImg.onload = () => {
+                    this.sprites.set(name, placeholderImg);
+                    this.loadedCount++;
+                    console.log(`🖼️ Created placeholder for: ${name} (${this.loadedCount}/${this.totalCount})`);
+                    resolve(placeholderImg);
+                };
+                placeholderImg.src = this.createPlaceholderSprite(color, placeholderType);
+            };
+            
+            img.src = path;
+        });
+
+        this.loadingPromises.set(name, loadPromise);
+        return loadPromise;
+    }
+
+    /**
+     * Load all sprites
+     */
+    async loadAllSprites() {
+        const spriteNames = Object.keys(this.SPRITE_PATHS);
+        this.totalCount = spriteNames.length;
+        this.loadedCount = 0;
+
+        console.log(`🖼️ Loading ${this.totalCount} sprites...`);
+
+        const loadPromises = spriteNames.map(name => 
+            this.loadSprite(name, this.SPRITE_PATHS[name])
+        );
+
+        try {
+            await Promise.all(loadPromises);
+            console.log('🎨 All sprites loaded successfully!');
+        } catch (error) {
+            console.warn('⚠️ Some sprites failed to load, but placeholders were created');
+        }
+
+        return this.sprites;
+    }
+
+    /**
+     * Get a loaded sprite
+     */
+    getSprite(name) {
+        return this.sprites.get(name);
+    }
+
+    /**
+     * Check if sprite is loaded
+     */
+    isLoaded(name) {
+        return this.sprites.has(name);
+    }
+
+    /**
+     * Get loading progress
+     */
+    getLoadingProgress() {
+        return {
+            loaded: this.loadedCount,
+            total: this.totalCount,
+            percentage: this.totalCount > 0 ? (this.loadedCount / this.totalCount) * 100 : 0
+        };
+    }
+}
+
+// ================================
+// 🎨 SPRITE RENDERER CLASS
+// ================================
+
+/**
+ * SpriteRenderer - Handles composite sprite rendering with layers
+ */
+class SpriteRenderer {
+    constructor(spriteLoader) {
+        this.spriteLoader = spriteLoader;
+        this.SPRITE_SIZE = 32;
+    }
+
+    /**
+     * Draw a composite sprite with multiple layers
+     */
+    drawCompositeSprite(ctx, x, y, baseName, layers = [], scale = 1, flipX = false) {
+        ctx.save();
+        
+        // Apply transformations
+        if (flipX) {
+            ctx.scale(-1, 1);
+            x = -x - (this.SPRITE_SIZE * scale);
+        }
+        
+        // Draw base sprite
+        this.drawSingleSprite(ctx, x, y, baseName, scale);
+        
+        // Draw layer sprites on top
+        layers.forEach(layerName => {
+            if (layerName && this.spriteLoader.isLoaded(layerName)) {
+                this.drawSingleSprite(ctx, x, y, layerName, scale);
+            }
+        });
+        
+        ctx.restore();
+    }
+
+    /**
+     * Draw a single sprite
+     */
+    drawSingleSprite(ctx, x, y, spriteName, scale = 1) {
+        const sprite = this.spriteLoader.getSprite(spriteName);
+        if (!sprite) {
+            console.warn(`⚠️ Sprite not found: ${spriteName}`);
+            return;
+        }
+
+        const width = this.SPRITE_SIZE * scale;
+        const height = this.SPRITE_SIZE * scale;
+        
+        ctx.drawImage(sprite, x, y, width, height);
+    }
+
+    /**
+     * Get sprite bounds for collision detection
+     */
+    getSpriteBounds(x, y, scale = 1) {
+        const size = this.SPRITE_SIZE * scale;
+        return {
+            x: x,
+            y: y,
+            width: size,
+            height: size,
+            centerX: x + size / 2,
+            centerY: y + size / 2
+        };
+    }
+}
+
+// ================================
 // 🎮 DUEL GAME CLASS
 // ================================
 
@@ -620,17 +852,42 @@ class DuelGame {
         this.initializeDOM();
         this.initializeCanvas();
         this.initializeConstants();
+        this.initializeSprites();
         this.initializePatternManager();
         this.initializeGameState();
         this.initializeAudio();
         this.initializeVisualEffects();
         this.initializeEventListeners();
         
-        // Start the game
-        this.reset();
-        this.startGameLoop();
+        // Load sprites and start the game
+        this.loadSpritesAndStart();
         
         console.log('🤠 Wild West Duel Game initialized successfully!');
+    }
+
+    async initializeSprites() {
+        this.spriteLoader = new SpriteLoader();
+        this.spriteRenderer = new SpriteRenderer(this.spriteLoader);
+        this.spritesLoaded = false;
+    }
+
+    async loadSpritesAndStart() {
+        try {
+            await this.spriteLoader.loadAllSprites();
+            this.spritesLoaded = true;
+            
+            // Start the game
+            this.reset();
+            this.startGameLoop();
+            
+            console.log('🎨 Sprites loaded and game started!');
+        } catch (error) {
+            console.warn('⚠️ Error loading sprites:', error);
+            // Start anyway with placeholders
+            this.spritesLoaded = true;
+            this.reset();
+            this.startGameLoop();
+        }
     }
     
     initializeDOM() {
@@ -664,11 +921,30 @@ class DuelGame {
             FINISHED: 'finished'
         };
         
+        // Updated player configuration for 32x32 sprites
         this.PLAYER_CONFIG = {
-            width: 60,
-            height: 80,
-            player1: { x: 150, y: 250, gunX: 200, gunY: 270 },
-            player2: { x: 590, y: 250, gunX: 600, gunY: 270 }
+            spriteSize: 32,
+            scale: 2, // Scale sprites 2x for better visibility
+            player1: { 
+                x: 150, 
+                y: 250, 
+                spriteX: 150, 
+                spriteY: 250,
+                gunOffsetX: 32, 
+                gunOffsetY: 20,
+                baseSkin: 'player_default',
+                accessories: ['gun'] // Default accessories
+            },
+            player2: { 
+                x: 590, 
+                y: 250, 
+                spriteX: 590, 
+                spriteY: 250,
+                gunOffsetX: -8, 
+                gunOffsetY: 20,
+                baseSkin: 'player_red',
+                accessories: ['gun'] // Default accessories
+            }
         };
         
         // Pattern configuration for PatternManager
@@ -712,12 +988,16 @@ class DuelGame {
         this.gameEndTimeoutId = null;
         this.patternTimeoutId = null;
         
+        // Updated player objects for sprite-based rendering
         this.player1 = {
             ...this.PLAYER_CONFIG.player1,
-            width: this.PLAYER_CONFIG.width,
-            height: this.PLAYER_CONFIG.height,
             hasShot: false,
             shotTime: 0,
+            // Sprite properties
+            currentSkin: this.PLAYER_CONFIG.player1.baseSkin,
+            currentAccessories: [...this.PLAYER_CONFIG.player1.accessories],
+            scale: this.PLAYER_CONFIG.scale,
+            flipX: false, // Player 1 faces right
             // Pattern-related properties
             pattern: [],
             patternProgress: 0,
@@ -727,10 +1007,13 @@ class DuelGame {
         
         this.player2 = {
             ...this.PLAYER_CONFIG.player2,
-            width: this.PLAYER_CONFIG.width,
-            height: this.PLAYER_CONFIG.height,
             hasShot: false,
             shotTime: 0,
+            // Sprite properties
+            currentSkin: this.PLAYER_CONFIG.player2.baseSkin,
+            currentAccessories: [...this.PLAYER_CONFIG.player2.accessories],
+            scale: this.PLAYER_CONFIG.scale,
+            flipX: true, // Player 2 faces left
             // Pattern-related properties
             pattern: [],
             patternProgress: 0,
@@ -826,9 +1109,51 @@ class DuelGame {
     }
     
     drawPlayer(player, direction) {
+        // Only draw sprites if they're loaded
+        if (!this.spritesLoaded || !this.spriteRenderer) {
+            // Fallback to rectangle rendering while sprites load
+            this.drawPlayerFallback(player, direction);
+            return;
+        }
+
+        // Calculate sprite position (center the sprite on the player position)
+        const spriteX = player.spriteX;
+        const spriteY = player.spriteY;
+
+        // Draw composite sprite with base skin and accessories
+        this.spriteRenderer.drawCompositeSprite(
+            this.ctx,
+            spriteX,
+            spriteY,
+            player.currentSkin,
+            player.currentAccessories,
+            player.scale,
+            player.flipX
+        );
+
+        // Update gun position for muzzle flash effects
+        const scaledSize = this.PLAYER_CONFIG.spriteSize * player.scale;
+        if (player.flipX) {
+            // Player 2 (facing left)
+            player.gunX = spriteX + player.gunOffsetX;
+            player.gunY = spriteY + player.gunOffsetY;
+        } else {
+            // Player 1 (facing right)
+            player.gunX = spriteX + scaledSize + player.gunOffsetX;
+            player.gunY = spriteY + player.gunOffsetY;
+        }
+    }
+
+    /**
+     * Fallback rectangle drawing for when sprites aren't loaded yet
+     */
+    drawPlayerFallback(player, direction) {
+        const fallbackWidth = 60;
+        const fallbackHeight = 80;
+        
         // Draw body
         this.ctx.fillStyle = '#8B4513';
-        this.ctx.fillRect(player.x, player.y, player.width, player.height);
+        this.ctx.fillRect(player.x, player.y, fallbackWidth, fallbackHeight);
         
         // Draw head
         this.ctx.fillStyle = '#FDBCB4';
@@ -842,8 +1167,12 @@ class DuelGame {
         // Draw gun
         this.ctx.fillStyle = '#444444';
         const gunLength = 40;
-        const gunX = direction === 1 ? player.x + player.width : player.x;
+        const gunX = direction === 1 ? player.x + fallbackWidth : player.x;
         this.ctx.fillRect(gunX, player.y + 20, gunLength * direction, 6);
+        
+        // Update gun position for fallback mode
+        player.gunX = gunX + (direction === 1 ? gunLength : 0);
+        player.gunY = player.y + 23;
     }
     
     drawVisualEffects() {
@@ -1107,6 +1436,130 @@ class DuelGame {
     }
     
     // ================================
+    // 🎨 SPRITE AND ACCESSORY SYSTEM
+    // ================================
+
+    /**
+     * Change a player's base skin
+     */
+    changePlayerSkin(playerNumber, skinName) {
+        if (playerNumber !== 1 && playerNumber !== 2) {
+            console.warn('⚠️ Invalid player number. Use 1 or 2.');
+            return false;
+        }
+
+        if (!this.spriteLoader.isLoaded(skinName)) {
+            console.warn(`⚠️ Skin '${skinName}' is not loaded.`);
+            return false;
+        }
+
+        const player = playerNumber === 1 ? this.player1 : this.player2;
+        player.currentSkin = skinName;
+        
+        console.log(`🎨 Player ${playerNumber} skin changed to: ${skinName}`);
+        return true;
+    }
+
+    /**
+     * Add an accessory to a player
+     */
+    addPlayerAccessory(playerNumber, accessoryName) {
+        if (playerNumber !== 1 && playerNumber !== 2) {
+            console.warn('⚠️ Invalid player number. Use 1 or 2.');
+            return false;
+        }
+
+        if (!this.spriteLoader.isLoaded(accessoryName)) {
+            console.warn(`⚠️ Accessory '${accessoryName}' is not loaded.`);
+            return false;
+        }
+
+        const player = playerNumber === 1 ? this.player1 : this.player2;
+        
+        if (!player.currentAccessories.includes(accessoryName)) {
+            player.currentAccessories.push(accessoryName);
+            console.log(`🎒 Added accessory '${accessoryName}' to Player ${playerNumber}`);
+            return true;
+        } else {
+            console.log(`📋 Player ${playerNumber} already has accessory '${accessoryName}'`);
+            return false;
+        }
+    }
+
+    /**
+     * Remove an accessory from a player
+     */
+    removePlayerAccessory(playerNumber, accessoryName) {
+        if (playerNumber !== 1 && playerNumber !== 2) {
+            console.warn('⚠️ Invalid player number. Use 1 or 2.');
+            return false;
+        }
+
+        const player = playerNumber === 1 ? this.player1 : this.player2;
+        const index = player.currentAccessories.indexOf(accessoryName);
+        
+        if (index > -1) {
+            player.currentAccessories.splice(index, 1);
+            console.log(`🗑️ Removed accessory '${accessoryName}' from Player ${playerNumber}`);
+            return true;
+        } else {
+            console.log(`📋 Player ${playerNumber} doesn't have accessory '${accessoryName}'`);
+            return false;
+        }
+    }
+
+    /**
+     * Clear all accessories from a player
+     */
+    clearPlayerAccessories(playerNumber) {
+        if (playerNumber !== 1 && playerNumber !== 2) {
+            console.warn('⚠️ Invalid player number. Use 1 or 2.');
+            return false;
+        }
+
+        const player = playerNumber === 1 ? this.player1 : this.player2;
+        player.currentAccessories = [];
+        console.log(`🧹 Cleared all accessories from Player ${playerNumber}`);
+        return true;
+    }
+
+    /**
+     * Get current player appearance
+     */
+    getPlayerAppearance(playerNumber) {
+        if (playerNumber !== 1 && playerNumber !== 2) {
+            console.warn('⚠️ Invalid player number. Use 1 or 2.');
+            return null;
+        }
+
+        const player = playerNumber === 1 ? this.player1 : this.player2;
+        return {
+            skin: player.currentSkin,
+            accessories: [...player.currentAccessories],
+            scale: player.scale,
+            flipX: player.flipX
+        };
+    }
+
+    /**
+     * Get all available sprites
+     */
+    getAvailableSprites() {
+        const sprites = this.spriteLoader.SPRITE_PATHS;
+        const loaded = {};
+        
+        Object.keys(sprites).forEach(name => {
+            loaded[name] = this.spriteLoader.isLoaded(name);
+        });
+        
+        return {
+            sprites: sprites,
+            loaded: loaded,
+            progress: this.spriteLoader.getLoadingProgress()
+        };
+    }
+
+    // ================================
     // 🔄 RESET AND UI CONTROLS SECTION
     // ================================
     
@@ -1217,19 +1670,27 @@ class DuelGame {
     }
 
     resetPlayers() {
+        // Reset player 1 state
         this.player1.hasShot = false;
         this.player1.shotTime = 0;
         this.player1.pattern = [];
         this.player1.patternProgress = 0;
         this.player1.isDisqualified = false;
         this.player1.lastInputTime = 0;
+        // Reset sprite properties to defaults
+        this.player1.currentSkin = this.PLAYER_CONFIG.player1.baseSkin;
+        this.player1.currentAccessories = [...this.PLAYER_CONFIG.player1.accessories];
         
+        // Reset player 2 state
         this.player2.hasShot = false;
         this.player2.shotTime = 0;
         this.player2.pattern = [];
         this.player2.patternProgress = 0;
         this.player2.isDisqualified = false;
         this.player2.lastInputTime = 0;
+        // Reset sprite properties to defaults
+        this.player2.currentSkin = this.PLAYER_CONFIG.player2.baseSkin;
+        this.player2.currentAccessories = [...this.PLAYER_CONFIG.player2.accessories];
         
         // Reset PatternManager
         this.patternManager.reset();
@@ -1495,8 +1956,50 @@ document.addEventListener('DOMContentLoaded', () => {
             console.log(`⏳ Game state: ${window.duelGame.gameState} - start a game first`);
         }
     };
+
+    // Sprite system debug functions
+    window.debugSprites = () => {
+        const sprites = window.duelGame.getAvailableSprites();
+        console.log('🖼️ Sprite System Debug:', sprites);
+        return sprites;
+    };
+
+    window.changePlayerSkin = (playerNumber, skinName) => {
+        console.log(`🎨 Attempting to change Player ${playerNumber} skin to '${skinName}'`);
+        return window.duelGame.changePlayerSkin(playerNumber, skinName);
+    };
+
+    window.addAccessory = (playerNumber, accessoryName) => {
+        console.log(`🎒 Attempting to add accessory '${accessoryName}' to Player ${playerNumber}`);
+        return window.duelGame.addPlayerAccessory(playerNumber, accessoryName);
+    };
+
+    window.removeAccessory = (playerNumber, accessoryName) => {
+        console.log(`🗑️ Attempting to remove accessory '${accessoryName}' from Player ${playerNumber}`);
+        return window.duelGame.removePlayerAccessory(playerNumber, accessoryName);
+    };
+
+    window.getPlayerAppearance = (playerNumber) => {
+        const appearance = window.duelGame.getPlayerAppearance(playerNumber);
+        console.log(`👤 Player ${playerNumber} appearance:`, appearance);
+        return appearance;
+    };
+
+    window.demoSprites = () => {
+        console.log('🎨 Sprite System Demo:');
+        console.log('📋 Available functions:');
+        console.log('  debugSprites() - Show sprite loading status');
+        console.log('  changePlayerSkin(1, "player_blue") - Change player skin');
+        console.log('  addAccessory(1, "hat") - Add accessory to player');
+        console.log('  removeAccessory(1, "gun") - Remove accessory from player');
+        console.log('  getPlayerAppearance(1) - Show current player appearance');
+        console.log('🖼️ Available skins: player_default, player_red, player_blue');
+        console.log('🎒 Available accessories: hat, gun, overlay');
+        console.log('💡 Try: changePlayerSkin(2, "player_blue"); addAccessory(1, "hat")');
+    };
     
     console.log('🎮 Wild West Duel Game ready to play!');
     console.log('🔧 Access game instance via window.duelGame for debugging');
-    console.log('🔧 Debug functions: debugInputQueue(), debugPatternManager(), demoInputQueue()');
+    console.log('🔧 Pattern functions: debugInputQueue(), debugPatternManager(), demoInputQueue()');
+    console.log('🎨 Sprite functions: debugSprites(), changePlayerSkin(), addAccessory(), demoSprites()');
 });
