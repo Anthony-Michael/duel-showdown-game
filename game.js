@@ -27,6 +27,10 @@ let gameState = 'waiting'; // 'waiting', 'countdown', 'ready', 'finished'
 let countdownTimer = 0;
 let countdownValue = 3;
 
+// Timeout tracking for cleanup
+let countdownTimeoutId = null;
+let gameEndTimeoutId = null;
+
 // Players
 const player1 = {
     x: 150,
@@ -235,11 +239,11 @@ function countdown() {
     if (countdownValue > 0) {
         countdownElement.textContent = countdownValue;
         countdownValue--;
-        setTimeout(countdown, 1000);
+        countdownTimeoutId = setTimeout(countdown, 1000);
     } else {
         countdownElement.textContent = 'FIRE!';
         gameState = 'ready';
-        setTimeout(() => {
+        gameEndTimeoutId = setTimeout(() => {
             if (gameState === 'ready') {
                 // Nobody shot in time
                 gameState = 'finished';
@@ -276,20 +280,53 @@ function checkGameEnd() {
 }
 
 function resetGame() {
+    // Clear any pending timeouts/intervals
+    if (countdownTimeoutId) {
+        clearTimeout(countdownTimeoutId);
+        countdownTimeoutId = null;
+    }
+    if (gameEndTimeoutId) {
+        clearTimeout(gameEndTimeoutId);
+        gameEndTimeoutId = null;
+    }
+    
+    // Reset game state variables
     gameState = 'waiting';
+    countdownValue = 3;
+    countdownTimer = 0;
+    
+    // Reset player states
     player1.hasShot = false;
     player1.shotTime = 0;
     player2.hasShot = false;
     player2.shotTime = 0;
+    
+    // Clear and reset UI elements
     countdownElement.textContent = 'Press A or L to start!';
     resultElement.textContent = '';
     
-    // Hide the Play Again button
+    // Hide the result and play again button
     playAgainBtn.classList.remove('show');
     
-    // Clear all visual effects
+    // Clear all visual effects arrays
     muzzleFlashes.length = 0;
     bulletTrails.length = 0;
+    
+    // Reset audio (stop any playing sounds)
+    try {
+        gunshotSound.pause();
+        gunshotSound.currentTime = 0;
+    } catch (error) {
+        // Ignore audio reset errors
+        console.warn('Audio reset warning:', error.message);
+    }
+    
+    // Clear canvas explicitly (will be redrawn in next frame)
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    
+    // Note: Event listeners are managed globally and don't need rebinding
+    // The keydown/keyup listeners are attached once at startup and handle
+    // all game states appropriately based on the current gameState variable
 }
 
 function drawPlayer(player, direction) {
