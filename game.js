@@ -9,18 +9,46 @@ const playAgainBtn = document.getElementById('playAgainBtn');
 canvas.width = 800;
 canvas.height = 400;
 
-// Audio setup - preload gunshot sound
+// Audio setup - Enhanced gunshot sound handling with comprehensive error handling
+// Features: preloading, load state tracking, early shot prevention, detailed error reporting
 const gunshotSound = new Audio('assets/gunshot.mp3');
 gunshotSound.preload = 'auto';
 gunshotSound.volume = 0.7; // Set volume to 70%
 
-// Handle audio loading errors gracefully
-gunshotSound.addEventListener('error', () => {
-    console.warn('Gunshot sound file not found. Game will continue without sound.');
+// Audio loading state tracking
+let audioLoaded = false;
+let audioError = false;
+let audioLoadAttempted = false;
+
+// Enhanced audio loading event handlers
+gunshotSound.addEventListener('canplaythrough', () => {
+    audioLoaded = true;
+    audioError = false;
+    console.log('Gunshot sound loaded successfully');
 });
 
-// Preload the audio
-gunshotSound.load();
+gunshotSound.addEventListener('error', (e) => {
+    audioError = true;
+    audioLoaded = false;
+    console.warn('Gunshot sound file failed to load:', e.type, 'Game will continue without sound.');
+});
+
+gunshotSound.addEventListener('loadstart', () => {
+    audioLoadAttempted = true;
+    console.log('Starting to load gunshot sound...');
+});
+
+gunshotSound.addEventListener('loadeddata', () => {
+    console.log('Gunshot sound data loaded');
+});
+
+// Preload the audio with error handling
+try {
+    gunshotSound.load();
+} catch (error) {
+    console.warn('Failed to initiate audio loading:', error.message);
+    audioError = true;
+}
 
 // Game state
 let gameState = 'waiting'; // 'waiting', 'countdown', 'ready', 'finished'
@@ -183,14 +211,29 @@ function handleInput(key) {
         } else if (key === 'l' && !player2.hasShot) {
             shootPlayer(player2, -1);
         }
+    } else {
+        // Handle early shots with explicit feedback
+        if (key === 'a' || key === 'l') {
+            const playerName = key === 'a' ? 'Player 1' : 'Player 2';
+            console.warn(`${playerName} shot too early! Current state: ${gameState}`);
+            
+            // Optional: Could add visual feedback here for early shots
+            // e.g., flash red border, show "TOO EARLY!" message, etc.
+        }
     }
 }
 
 function shootPlayer(player, direction) {
+    // Extra safety check: Prevent shooting if not in 'ready' state
+    if (gameState !== 'ready') {
+        console.warn('Early shot attempt blocked - game not ready');
+        return;
+    }
+    
     player.hasShot = true;
     player.shotTime = Date.now();
     
-    // Play gunshot sound effect (only plays for valid shots after "FIRE!")
+    // Play gunshot sound effect (only for valid shots after "FIRE!")
     playGunshotSound();
     
     // Create muzzle flash
@@ -210,7 +253,29 @@ function shootPlayer(player, direction) {
 }
 
 function playGunshotSound() {
+    // Check if audio is available and loaded
+    if (audioError) {
+        console.warn('Cannot play gunshot sound - audio failed to load');
+        return;
+    }
+    
+    if (!audioLoaded && audioLoadAttempted) {
+        console.warn('Cannot play gunshot sound - audio still loading');
+        return;
+    }
+    
+    if (!audioLoadAttempted) {
+        console.warn('Cannot play gunshot sound - audio not initialized');
+        return;
+    }
+    
     try {
+        // Check if audio element is in a valid state
+        if (gunshotSound.readyState < 2) { // HAVE_CURRENT_DATA
+            console.warn('Cannot play gunshot sound - insufficient audio data loaded');
+            return;
+        }
+        
         // Reset the audio to the beginning in case it's already played
         gunshotSound.currentTime = 0;
         
@@ -219,12 +284,55 @@ function playGunshotSound() {
         
         // Handle promise rejection (modern browsers require user interaction first)
         if (playPromise !== undefined) {
-            playPromise.catch(error => {
-                console.warn('Could not play gunshot sound:', error.message);
+            playPromise.then(() => {
+                console.log('Gunshot sound played successfully');
+            }).catch(error => {
+                if (error.name === 'NotAllowedError') {
+                    console.warn('Gunshot sound blocked by browser - user interaction required first');
+                } else if (error.name === 'AbortError') {
+                    console.warn('Gunshot sound playback aborted');
+                } else {
+                    console.warn('Could not play gunshot sound:', error.name, error.message);
+                }
             });
         }
     } catch (error) {
-        console.warn('Error playing gunshot sound:', error.message);
+        console.warn('Error attempting to play gunshot sound:', error.message);
+        
+        // If there's a critical error, mark audio as failed
+        if (error.name === 'InvalidStateError' || error.name === 'NotSupportedError') {
+            audioError = true;
+            console.warn('Audio marked as failed due to critical error');
+        }
+    }
+}
+
+// Audio diagnostics and retry function
+function getAudioStatus() {
+    return {
+        loaded: audioLoaded,
+        error: audioError,
+        loadAttempted: audioLoadAttempted,
+        readyState: gunshotSound.readyState,
+        networkState: gunshotSound.networkState,
+        currentTime: gunshotSound.currentTime,
+        duration: gunshotSound.duration || 'unknown'
+    };
+}
+
+// Optional: Function to retry audio loading if it failed
+function retryAudioLoad() {
+    if (audioError && audioLoadAttempted) {
+        console.log('Retrying audio load...');
+        audioError = false;
+        audioLoaded = false;
+        
+        try {
+            gunshotSound.load();
+        } catch (error) {
+            console.warn('Audio retry failed:', error.message);
+            audioError = true;
+        }
     }
 }
 
@@ -314,11 +422,23 @@ function resetGame() {
     
     // Reset audio (stop any playing sounds)
     try {
-        gunshotSound.pause();
-        gunshotSound.currentTime = 0;
+        if (!audioError && gunshotSound.readyState >= 1) { // HAVE_METADATA
+            gunshotSound.pause();
+            gunshotSound.currentTime = 0;
+            console.log('Audio reset successfully');
+        } else if (audioError) {
+            console.warn('Skipping audio reset - audio is in error state');
+        } else {
+            console.warn('Skipping audio reset - audio not ready');
+        }
     } catch (error) {
-        // Ignore audio reset errors
+        // Ignore audio reset errors but log them for debugging
         console.warn('Audio reset warning:', error.message);
+        
+        // If reset fails critically, mark audio as having issues
+        if (error.name === 'InvalidStateError') {
+            console.warn('Audio may be in an invalid state');
+        }
     }
     
     // Clear canvas explicitly (will be redrawn in next frame)
