@@ -17,6 +17,15 @@
         <canvas id="gameCanvas"></canvas>
         <div id="countdown"></div>
         
+        <!-- Coin Counter -->
+        <div id="coinCounter" class="coin-counter">
+            <span class="coin-icon">🪙</span>
+            <span id="coinAmount">50</span>
+        </div>
+        
+        <!-- Store Button -->
+        <button id="storeButton" class="store-button">🛒 Store</button>
+        
         <!-- Pattern Display Section -->
         <div id="patternDisplay" class="pattern-display">
             <div class="pattern-section">
@@ -40,6 +49,36 @@
             <p>Memorize your 3-key pattern when countdown reaches 1</p>
             <p>First to complete pattern after "FIRE!" wins!</p>
             <p>Wrong keys or early input = penalty!</p>
+        </div>
+        
+        <!-- Store Modal -->
+        <div id="storeModal" class="store-modal hidden">
+            <div class="store-modal-content">
+                <div class="store-header">
+                    <h2>🛒 Equipment Store</h2>
+                    <button id="closeStoreButton" class="close-button">✕</button>
+                </div>
+                
+                <div class="store-tabs">
+                    <button class="store-tab active" data-category="skins">🎨 Skins</button>
+                    <button class="store-tab" data-category="hats">🎩 Hats</button>
+                    <button class="store-tab" data-category="guns">🔫 Guns</button>
+                </div>
+                
+                <div class="store-content">
+                    <div class="player-selection">
+                        <label>Equip to:</label>
+                        <select id="playerSelect">
+                            <option value="1">Player 1</option>
+                            <option value="2">Player 2</option>
+                        </select>
+                    </div>
+                    
+                    <div id="storeItems" class="store-items">
+                        <!-- Items will be populated by JavaScript -->
+                    </div>
+                </div>
+            </div>
         </div>
     </div>
     <script src="game.js"></script>

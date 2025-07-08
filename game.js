@@ -18,13 +18,36 @@
 class PatternManager {
     constructor(config = {}) {
         this.config = {
-            length: config.length || 3,
-            availableKeys: config.availableKeys || ['A', 'S', 'D', 'W', 'Q', 'E', 'Z', 'X', 'C'],
+            defaultLength: config.defaultLength || 3,
+            defaultAvailableKeys: config.defaultAvailableKeys || ['A', 'S', 'D', 'W', 'Q', 'E', 'Z', 'X', 'C'],
             displayTime: config.displayTime || 2000,
-            penaltyTime: config.penaltyTime || 1000
+            defaultPenaltyTime: config.defaultPenaltyTime || 1000,
+            wrongPatternDelay: config.wrongPatternDelay || 1500 // New: delay for wrong patterns
         };
         
-        // Player pattern states
+        // Weapon-specific configurations
+        this.weaponConfigs = {
+            gun_revolver: {
+                length: 3,
+                availableKeys: ['A', 'S', 'D', 'W', 'Q', 'E', 'Z', 'X', 'C'],
+                inputWindow: 5000, // 5 seconds to input pattern
+                name: 'Revolver'
+            },
+            gun_laser: {
+                length: 4,
+                availableKeys: ['↑', '↓', '←', '→', 'A', 'S', 'D', 'W'], // Arrows + some letters
+                inputWindow: 6000, // 6 seconds for longer pattern
+                name: 'Laser Gun'
+            },
+            gun_shotgun: {
+                length: 2,
+                availableKeys: ['A', 'S', 'D', 'W', 'Q', 'E'],
+                inputWindow: 3000, // 3 seconds - shorter window
+                name: 'Shotgun'
+            }
+        };
+        
+        // Player pattern states with weapon info
         this.players = {
             player1: this.createPlayerState(),
             player2: this.createPlayerState()
@@ -35,6 +58,13 @@ class PatternManager {
         
         // UI elements (will be set by game)
         this.uiElements = {};
+        
+        // Timing state for input windows and penalties
+        this.timing = {
+            patternStartTime: 0,
+            player1: { penaltyEndTime: 0, inputWindow: 0 },
+            player2: { penaltyEndTime: 0, inputWindow: 0 }
+        };
     }
 
     /**
@@ -46,7 +76,11 @@ class PatternManager {
             progress: 0,
             isDisqualified: false,
             lastInputTime: 0,
-            isComplete: false
+            isComplete: false,
+            weaponType: null,
+            weaponConfig: null,
+            hasPenalty: false,
+            lastWrongInput: 0
         };
     }
 
@@ -58,18 +92,37 @@ class PatternManager {
     }
 
     /**
-     * Generate unique patterns for both players
+     * Generate unique patterns for both players based on their equipped weapons
      */
-    generatePatterns() {
-        this.players.player1.pattern = this.generateRandomPattern();
-        this.players.player2.pattern = this.generateRandomPattern();
+    generatePatterns(player1Equipment, player2Equipment) {
+        // Set weapon types and configs for each player
+        this.players.player1.weaponType = player1Equipment.equippedGun || 'gun_revolver';
+        this.players.player2.weaponType = player2Equipment.equippedGun || 'gun_revolver';
         
-        // Ensure patterns are different
-        while (this.arraysEqual(this.players.player1.pattern, this.players.player2.pattern)) {
-            this.players.player2.pattern = this.generateRandomPattern();
+        this.players.player1.weaponConfig = this.weaponConfigs[this.players.player1.weaponType];
+        this.players.player2.weaponConfig = this.weaponConfigs[this.players.player2.weaponType];
+        
+        // Generate weapon-specific patterns
+        this.players.player1.pattern = this.generateWeaponSpecificPattern(this.players.player1.weaponType);
+        this.players.player2.pattern = this.generateWeaponSpecificPattern(this.players.player2.weaponType);
+        
+        // Ensure patterns are different (if using same weapon type)
+        if (this.players.player1.weaponType === this.players.player2.weaponType) {
+            let attempts = 0;
+            while (this.arraysEqual(this.players.player1.pattern, this.players.player2.pattern) && attempts < 10) {
+                this.players.player2.pattern = this.generateWeaponSpecificPattern(this.players.player2.weaponType);
+                attempts++;
+            }
         }
         
-        console.log('🎯 Generated patterns - Player 1:', this.players.player1.pattern, 'Player 2:', this.players.player2.pattern);
+        // Set timing windows
+        this.timing.player1.inputWindow = this.players.player1.weaponConfig.inputWindow;
+        this.timing.player2.inputWindow = this.players.player2.weaponConfig.inputWindow;
+        
+        console.log(`🎯 Generated weapon-specific patterns:`);
+        console.log(`Player 1 (${this.players.player1.weaponConfig.name}):`, this.players.player1.pattern);
+        console.log(`Player 2 (${this.players.player2.weaponConfig.name}):`, this.players.player2.pattern);
+        
         return {
             player1: [...this.players.player1.pattern],
             player2: [...this.players.player2.pattern]
@@ -77,13 +130,37 @@ class PatternManager {
     }
 
     /**
-     * Generate a random pattern of unique keys
+     * Generate a weapon-specific pattern
+     */
+    generateWeaponSpecificPattern(weaponType) {
+        const config = this.weaponConfigs[weaponType];
+        if (!config) {
+            console.warn(`Unknown weapon type: ${weaponType}, using default`);
+            return this.generateRandomPattern();
+        }
+        
+        const pattern = [];
+        const availableKeys = [...config.availableKeys];
+        
+        for (let i = 0; i < config.length; i++) {
+            const randomIndex = Math.floor(Math.random() * availableKeys.length);
+            const selectedKey = availableKeys[randomIndex];
+            pattern.push(selectedKey);
+            // Remove selected key to avoid duplicates in pattern
+            availableKeys.splice(randomIndex, 1);
+        }
+        
+        return pattern;
+    }
+
+    /**
+     * Generate a random pattern using default configuration (fallback)
      */
     generateRandomPattern() {
         const pattern = [];
-        const availableKeys = [...this.config.availableKeys];
+        const availableKeys = [...this.config.defaultAvailableKeys];
         
-        for (let i = 0; i < this.config.length; i++) {
+        for (let i = 0; i < this.config.defaultLength; i++) {
             const randomIndex = Math.floor(Math.random() * availableKeys.length);
             const selectedKey = availableKeys[randomIndex];
             pattern.push(selectedKey);
@@ -110,6 +187,14 @@ class PatternManager {
         this.players.player1 = this.createPlayerState();
         this.players.player2 = this.createPlayerState();
         this.inputQueue = [];
+        
+        // Reset timing state
+        this.timing = {
+            patternStartTime: 0,
+            player1: { penaltyEndTime: 0, inputWindow: 0 },
+            player2: { penaltyEndTime: 0, inputWindow: 0 }
+        };
+        
         this.resetAllVisualStates();
     }
 
@@ -157,7 +242,7 @@ class PatternManager {
     }
 
     /**
-     * Display patterns in UI
+     * Display patterns in UI with weapon info
      */
     displayPatterns() {
         this.renderPatternDisplay(this.players.player1.pattern, 'player1');
@@ -171,25 +256,29 @@ class PatternManager {
         this.updateProgressDisplay('player1');
         this.updateProgressDisplay('player2');
         
-        // Initialize feedback messages
+        // Initialize feedback messages with weapon info
         this.initializeFeedbackMessages();
     }
 
     /**
-     * Initialize feedback messages for both players
+     * Initialize feedback messages for both players with weapon info
      */
     initializeFeedbackMessages() {
-        const feedbackElements = [
-            this.uiElements.player1FeedbackElement,
-            this.uiElements.player2FeedbackElement
-        ];
+        const player1Config = this.players.player1.weaponConfig;
+        const player2Config = this.players.player2.weaponConfig;
         
-        feedbackElements.forEach(element => {
-            if (element) {
-                element.textContent = 'Memorize your pattern!';
-                element.className = 'pattern-feedback';
-            }
-        });
+        const player1Feedback = this.uiElements.player1FeedbackElement;
+        const player2Feedback = this.uiElements.player2FeedbackElement;
+        
+        if (player1Feedback && player1Config) {
+            player1Feedback.textContent = `${player1Config.name}: Memorize your pattern!`;
+            player1Feedback.className = 'pattern-feedback';
+        }
+        
+        if (player2Feedback && player2Config) {
+            player2Feedback.textContent = `${player2Config.name}: Memorize your pattern!`;
+            player2Feedback.className = 'pattern-feedback';
+        }
     }
 
     /**
@@ -213,6 +302,12 @@ class PatternManager {
         pattern.forEach((key, index) => {
             const keyElement = document.createElement('div');
             keyElement.className = 'pattern-key';
+            
+            // Add arrow class for arrow keys
+            if (['↑', '↓', '←', '→'].includes(key)) {
+                keyElement.classList.add('arrow');
+            }
+            
             keyElement.textContent = key;
             keyElement.id = `${playerId}_key_${index}`;
             patternElement.appendChild(keyElement);
@@ -220,22 +315,19 @@ class PatternManager {
     }
 
     /**
-     * Update progress display for a player
+     * Update progress display for a specific player
      */
     updateProgressDisplay(playerId) {
         const player = this.players[playerId];
         const progressElement = this.uiElements[`${playerId}ProgressElement`];
-        
         if (!progressElement) return;
         
-        progressElement.textContent = `Progress: ${player.progress}/${this.config.length}`;
+        const totalKeys = player.pattern ? player.pattern.length : this.config.defaultLength;
+        progressElement.textContent = `Progress: ${player.progress}/${totalKeys}`;
         progressElement.style.color = '#F5DEB3';
         
-        // Update visual feedback for all keys
+        // Update key visual states
         this.updateKeyVisualStates(playerId);
-        
-        // Show progress feedback
-        this.showProgressFeedback(playerId, player.progress);
     }
 
     /**
@@ -273,31 +365,12 @@ class PatternManager {
     }
 
     /**
-     * Show progress feedback message
-     */
-    showProgressFeedback(playerId, progress) {
-        const feedbackElement = this.uiElements[`${playerId}FeedbackElement`];
-        if (!feedbackElement) return;
-        
-        const totalKeys = this.config.length;
-        const percentage = Math.round((progress / totalKeys) * 100);
-        
-        if (progress === 0) {
-            feedbackElement.textContent = 'Ready to start!';
-            feedbackElement.className = 'pattern-feedback';
-        } else if (progress < totalKeys) {
-            feedbackElement.textContent = `${percentage}% Complete`;
-            feedbackElement.className = 'pattern-feedback success';
-        }
-    }
-
-    /**
      * Queue input for pattern validation (non-immediate processing)
      */
     queueInput(key, timestamp) {
         const upperKey = key.toUpperCase();
         
-        if (!this.config.availableKeys.includes(upperKey)) {
+        if (!this.isPatternKey(upperKey)) {
             return null;
         }
         
@@ -346,7 +419,7 @@ class PatternManager {
     }
 
     /**
-     * Handle input for pattern validation (internal processing)
+     * Handle input for patterns with weapon-specific validation
      */
     handleInput(key, gameState, isReadyState, timestamp = Date.now()) {
         const upperKey = key.toUpperCase();
@@ -355,35 +428,80 @@ class PatternManager {
             return this.handleEarlyInput(upperKey);
         }
         
-        // Check which player this key belongs to
-        const results = [];
-        
-        if (this.isValidInput('player1', upperKey)) {
-            results.push(this.processInput('player1', upperKey, timestamp));
+        // Set pattern start time if not set
+        if (this.timing.patternStartTime === 0) {
+            this.timing.patternStartTime = timestamp;
         }
         
-        if (this.isValidInput('player2', upperKey)) {
-            results.push(this.processInput('player2', upperKey, timestamp));
+        // Check which player this key belongs to and process
+        const results = [];
+        
+        // Check Player 1
+        if (this.canPlayerInput('player1', upperKey, timestamp)) {
+            const result = this.processWeaponInput('player1', upperKey, timestamp);
+            if (result) results.push(result);
+        }
+        
+        // Check Player 2
+        if (this.canPlayerInput('player2', upperKey, timestamp)) {
+            const result = this.processWeaponInput('player2', upperKey, timestamp);
+            if (result) results.push(result);
         }
         
         return results;
     }
 
     /**
-     * Check if input is valid for a player
+     * Check if a player can input at this time (considering penalties and windows)
      */
-    isValidInput(playerId, key) {
+    canPlayerInput(playerId, key, timestamp) {
         const player = this.players[playerId];
-        return !player.isDisqualified && 
-               !player.isComplete && 
-               player.progress < player.pattern.length && 
-               player.pattern[player.progress] === key;
+        const timing = this.timing[playerId];
+        
+        // Check if player is disqualified or completed
+        if (player.isDisqualified || player.isComplete) {
+            return false;
+        }
+        
+        // Check if player is in penalty period
+        if (timestamp < timing.penaltyEndTime) {
+            return false;
+        }
+        
+        // Check if input window has expired
+        const timeSinceStart = timestamp - this.timing.patternStartTime;
+        if (timeSinceStart > timing.inputWindow) {
+            return false;
+        }
+        
+        // Check if key is valid for this weapon
+        if (!player.weaponConfig.availableKeys.includes(key)) {
+            return false;
+        }
+        
+        return true;
     }
 
     /**
-     * Process valid input for a player
+     * Process weapon-specific input with wrong pattern penalties
      */
-    processInput(playerId, key, timestamp = Date.now()) {
+    processWeaponInput(playerId, key, timestamp) {
+        const player = this.players[playerId];
+        const expectedKey = player.pattern[player.progress];
+        
+        if (key === expectedKey) {
+            // Correct input
+            return this.processCorrectInput(playerId, key, timestamp);
+        } else {
+            // Wrong input - apply penalty
+            return this.processWrongInput(playerId, key, timestamp);
+        }
+    }
+
+    /**
+     * Process correct input
+     */
+    processCorrectInput(playerId, key, timestamp) {
         const player = this.players[playerId];
         
         player.progress++;
@@ -414,22 +532,116 @@ class PatternManager {
     }
 
     /**
-     * Handle early input (before FIRE!)
+     * Process wrong input with penalty delay
+     */
+    processWrongInput(playerId, key, timestamp) {
+        const player = this.players[playerId];
+        const timing = this.timing[playerId];
+        
+        // Apply penalty delay
+        timing.penaltyEndTime = timestamp + this.config.wrongPatternDelay;
+        player.hasPenalty = true;
+        player.lastWrongInput = timestamp;
+        
+        console.log(`❌ ${playerId} wrong key: ${key} (expected: ${player.pattern[player.progress]}) - ${this.config.wrongPatternDelay}ms penalty`);
+        
+        // Show wrong input feedback
+        this.showWrongInputFeedback(playerId, key);
+        
+        return {
+            type: 'wrong_input',
+            playerId: playerId,
+            expectedKey: player.pattern[player.progress],
+            actualKey: key,
+            penaltyDuration: this.config.wrongPatternDelay
+        };
+    }
+
+    /**
+     * Show feedback for wrong input
+     */
+    showWrongInputFeedback(playerId, key) {
+        const progressElement = this.uiElements[`${playerId}ProgressElement`];
+        if (progressElement) {
+            progressElement.textContent = `❌ Wrong! Penalty: 1.5s`;
+            progressElement.style.color = '#FF6347';
+        }
+        
+        const feedbackElement = this.uiElements[`${playerId}FeedbackElement`];
+        if (feedbackElement) {
+            feedbackElement.textContent = 'Wrong Pattern! Wait...';
+            feedbackElement.className = 'pattern-feedback error';
+        }
+        
+        // Mark current key as error if applicable
+        if (this.players[playerId].progress < this.players[playerId].pattern.length) {
+            const keyElement = document.getElementById(`${playerId}_key_${this.players[playerId].progress}`);
+            if (keyElement) {
+                keyElement.classList.add('error');
+                setTimeout(() => {
+                    keyElement.classList.remove('error');
+                }, this.config.wrongPatternDelay);
+            }
+        }
+        
+        // Clear penalty feedback after delay
+        setTimeout(() => {
+            if (feedbackElement && !this.players[playerId].isComplete && !this.players[playerId].isDisqualified) {
+                feedbackElement.textContent = 'Try again!';
+                feedbackElement.className = 'pattern-feedback';
+            }
+            if (progressElement && !this.players[playerId].isComplete && !this.players[playerId].isDisqualified) {
+                this.updateProgressDisplay(playerId);
+            }
+        }, this.config.wrongPatternDelay);
+    }
+
+    /**
+     * Check if input is valid for a player (updated for weapon-specific keys)
+     */
+    isValidInput(playerId, key) {
+        const player = this.players[playerId];
+        return !player.isDisqualified && 
+               !player.isComplete && 
+               player.progress < player.pattern.length && 
+               player.weaponConfig && 
+               player.weaponConfig.availableKeys.includes(key) &&
+               player.pattern[player.progress] === key;
+    }
+
+    /**
+     * Handle early input (before FIRE!) with weapon awareness
      */
     handleEarlyInput(key) {
-        if (!this.config.availableKeys.includes(key)) {
+        if (!this.isPatternKey(key)) {
             return null;
         }
         
         console.warn(`⚠️ Early input detected: ${key}`);
         
-        // Determine which player pressed early
+        // Determine which player pressed early based on weapon configurations
         let playerId = null;
         
-        if (this.players.player1.pattern.includes(key)) {
-            playerId = 'player1';
-        } else if (this.players.player2.pattern.includes(key)) {
-            playerId = 'player2';
+        // Check if key belongs to either player's weapon pattern
+        if (this.players.player1.weaponConfig && this.players.player1.weaponConfig.availableKeys.includes(key)) {
+            if (this.players.player1.pattern.includes(key)) {
+                playerId = 'player1';
+            }
+        }
+        
+        if (this.players.player2.weaponConfig && this.players.player2.weaponConfig.availableKeys.includes(key)) {
+            if (this.players.player2.pattern.includes(key)) {
+                playerId = 'player2';
+            }
+        }
+        
+        // Fallback to checking default pattern keys
+        if (!playerId) {
+            if (this.players.player1.pattern.includes(key)) {
+                playerId = 'player1';
+            } else if (this.players.player2.pattern.includes(key)) {
+                playerId = 'player2';
+            }
         }
         
         if (playerId && !this.players[playerId].isDisqualified) {
@@ -576,10 +788,24 @@ class PatternManager {
     }
 
     /**
-     * Check if a key belongs to any player's pattern
+     * Check if a key belongs to any weapon's pattern keys
      */
     isPatternKey(key) {
-        return this.config.availableKeys.includes(key.toUpperCase());
+        const upperKey = key.toUpperCase();
+        
+        // Check default keys first
+        if (this.config.defaultAvailableKeys.includes(upperKey)) {
+            return true;
+        }
+        
+        // Check weapon-specific keys
+        for (const weaponType in this.weaponConfigs) {
+            if (this.weaponConfigs[weaponType].availableKeys.includes(upperKey)) {
+                return true;
+            }
+        }
+        
+        return false;
     }
 
     /**
@@ -597,9 +823,10 @@ class PatternManager {
      */
     getInputQueueStatus() {
         return {
-            queueLength: this.inputQueue.length,
-            queuedInputs: [...this.inputQueue],
-            hasQueuedInputs: this.inputQueue.length > 0
+            queueLength: this.inputQueue ? this.inputQueue.length : 0,
+            queuedInputs: this.inputQueue ? [...this.inputQueue] : [],
+            gameState: this.gameState,
+            isListening: this.gameState === this.GAME_STATES.READY
         };
     }
 }
@@ -621,16 +848,23 @@ class SpriteLoader {
         // Default sprite configuration
         this.SPRITE_SIZE = 32;
         this.SPRITE_PATHS = {
-            // Base character sprites
+            // Base character sprites (for drawImage rendering)
+            cowboy_plain: 'assets/sprites/cowboy_plain.png',
+            helmeted_shotgun: 'assets/sprites/helmeted_shotgun.png',
+            
+            // Gun sprites (drawn on top near hand position)
+            gun_revolver: 'assets/sprites/gun_revolver.png',
+            gun_shotgun: 'assets/sprites/gun_shotgun.png',
+            gun_laser: 'assets/sprites/gun_laser.png',
+            
+            // Additional character sprites
             player_default: 'assets/sprites/player_default.png',
             player_cowboy: 'assets/sprites/player_cowboy.png',
+            player_cowboy_plain: 'assets/sprites/player_cowboy_plain.png',
+            player_helmeted_shotgun: 'assets/sprites/player_helmeted_shotgun.png',
             
             // Hat accessories
             hat_fedora: 'assets/sprites/hat_fedora.png',
-            
-            // Gun accessories
-            gun_revolver: 'assets/sprites/gun_revolver.png',
-            gun_laser: 'assets/sprites/gun_laser.png',
             
             // Legacy sprites (for backward compatibility)
             player_red: 'assets/sprites/player_red.png',
@@ -651,7 +885,7 @@ class SpriteLoader {
         const ctx = canvas.getContext('2d');
         
         if (type === 'player') {
-            // Create a simple character sprite
+            // Create a simple character sprite (baseSprite)
             ctx.fillStyle = color;
             ctx.fillRect(4, 8, 24, 24); // Body
             
@@ -660,7 +894,17 @@ class SpriteLoader {
             ctx.fillRect(8, 4, 16, 12); // Head
             
             // Different styling based on color (indicating different character types)
-            if (color === '#654321') { // Cowboy variant
+            if (color === '#556B2F') { // Helmeted shotgun variant
+                // Military green armor
+                ctx.fillStyle = '#556B2F';
+                ctx.fillRect(6, 10, 20, 18); // Armor vest
+                // Helmet
+                ctx.fillStyle = '#2F4F2F';
+                ctx.fillRect(6, 2, 20, 10); // Helmet
+                // Visor
+                ctx.fillStyle = '#000000';
+                ctx.fillRect(8, 6, 16, 4); // Dark visor
+            } else if (color === '#654321') { // Cowboy variant
                 // Vest
                 ctx.fillStyle = '#8B0000';
                 ctx.fillRect(8, 12, 16, 16); // Red vest
@@ -682,6 +926,13 @@ class SpriteLoader {
                 ctx.fillRect(20, 15, 10, 2); // Cyan beam
                 ctx.fillStyle = '#FF0000';
                 ctx.fillRect(24, 14, 4, 4); // Red tip
+            } else if (color === '#8B4513') { // Shotgun
+                ctx.fillStyle = '#654321';
+                ctx.fillRect(18, 13, 12, 6); // Longer barrel
+                ctx.fillStyle = '#8B4513';
+                ctx.fillRect(14, 15, 8, 4); // Wooden stock
+                ctx.fillStyle = '#444444';
+                ctx.fillRect(22, 16, 2, 2); // Trigger guard
             } else { // Revolver or regular gun
                 ctx.fillStyle = '#444444';
                 ctx.fillRect(20, 14, 10, 4); // Barrel
@@ -729,8 +980,9 @@ class SpriteLoader {
                 resolve(img);
             };
             
-            img.onerror = () => {
-                console.warn(`⚠️ Failed to load sprite: ${name} from ${path}, using placeholder`);
+            img.onerror = (error) => {
+                console.error(`❌ Failed to load sprite: ${name} from ${path}`, error);
+                console.warn(`⚠️ Using placeholder for: ${name}`);
                 
                 // Create placeholder based on sprite name
                 let placeholderType = 'player';
@@ -740,20 +992,25 @@ class SpriteLoader {
                     placeholderType = 'gun';
                     if (name.includes('laser')) {
                         color = '#00FFFF'; // Cyan for laser
+                    } else if (name.includes('shotgun')) {
+                        color = '#8B4513'; // Brown for shotgun
                     } else {
                         color = '#444444'; // Dark gray for revolver/gun
                     }
                 } else if (name.includes('hat')) {
                     placeholderType = 'hat';
                     color = '#2F2F2F'; // Dark gray for hats
-                } else if (name.includes('player')) {
+                } else {
+                    // Character sprites (baseSprite)
                     placeholderType = 'player';
-                    if (name.includes('red')) {
+                    if (name.includes('helmeted') || name.includes('shotgun')) {
+                        color = '#556B2F'; // Dark olive for helmeted
+                    } else if (name.includes('cowboy') || name.includes('plain')) {
+                        color = '#654321'; // Darker brown for cowboy
+                    } else if (name.includes('red')) {
                         color = '#CD5C5C';
                     } else if (name.includes('blue')) {
                         color = '#4169E1';
-                    } else if (name.includes('cowboy')) {
-                        color = '#654321'; // Darker brown for cowboy
                     } else {
                         color = '#8B4513'; // Default brown
                     }
@@ -765,6 +1022,10 @@ class SpriteLoader {
                     this.loadedCount++;
                     console.log(`🖼️ Created placeholder for: ${name} (${this.loadedCount}/${this.totalCount})`);
                     resolve(placeholderImg);
+                };
+                placeholderImg.onerror = () => {
+                    console.error(`❌ Failed to create placeholder for: ${name}`);
+                    reject(new Error(`Failed to create placeholder sprite for ${name}`));
                 };
                 placeholderImg.src = this.createPlaceholderSprite(color, placeholderType);
             };
@@ -840,7 +1101,7 @@ class SpriteRenderer {
     }
 
     /**
-     * Draw a composite sprite with multiple layers
+     * Draw a composite sprite with baseSprite + gunSprite using drawImage()
      */
     drawCompositeSprite(ctx, x, y, baseName, layers = [], scale = 1, flipX = false) {
         ctx.save();
@@ -851,13 +1112,21 @@ class SpriteRenderer {
             x = -x - (this.SPRITE_SIZE * scale);
         }
         
-        // Draw base sprite
-        this.drawSingleSprite(ctx, x, y, baseName, scale);
+        // Draw base sprite (character body) using drawImage()
+        const baseSuccess = this.drawSingleSprite(ctx, x, y, baseName, scale);
+        if (!baseSuccess) {
+            console.warn(`⚠️ Failed to render baseSprite: ${baseName}, continuing gracefully`);
+        }
         
-        // Draw layer sprites on top
-        layers.forEach(layerName => {
+        // Draw layer sprites on top (hat, gun, etc.) using drawImage()
+        layers.forEach((layerName, index) => {
             if (layerName && this.spriteLoader.isLoaded(layerName)) {
-                this.drawSingleSprite(ctx, x, y, layerName, scale);
+                const layerSuccess = this.drawSingleSprite(ctx, x, y, layerName, scale);
+                if (!layerSuccess) {
+                    console.warn(`⚠️ Failed to render layer ${index} (${layerName}), continuing gracefully`);
+                }
+            } else if (layerName) {
+                console.warn(`⚠️ Layer sprite not loaded: ${layerName}, skipping layer`);
             }
         });
         
@@ -865,19 +1134,26 @@ class SpriteRenderer {
     }
 
     /**
-     * Draw a single sprite
+     * Draw a single sprite using drawImage()
      */
     drawSingleSprite(ctx, x, y, spriteName, scale = 1) {
         const sprite = this.spriteLoader.getSprite(spriteName);
         if (!sprite) {
-            console.warn(`⚠️ Sprite not found: ${spriteName}`);
-            return;
+            console.error(`❌ Sprite not found for drawImage(): ${spriteName}`);
+            return false;
         }
 
         const width = this.SPRITE_SIZE * scale;
         const height = this.SPRITE_SIZE * scale;
         
-        ctx.drawImage(sprite, x, y, width, height);
+        try {
+            // Use drawImage() to render the sprite
+            ctx.drawImage(sprite, x, y, width, height);
+            return true;
+        } catch (error) {
+            console.error(`❌ Failed to drawImage() for sprite: ${spriteName}`, error);
+            return false;
+        }
     }
 
     /**
@@ -908,28 +1184,30 @@ class EquipmentManager {
         this.STORAGE_KEY = 'duel_game_equipment';
         this.DEFAULT_EQUIPMENT = {
             player1: {
-                equippedCharacterSkin: 'player_default',
+                equippedCharacterSkin: 'cowboy_plain',
                 equippedHat: null,
                 equippedGun: 'gun_revolver'
             },
             player2: {
-                equippedCharacterSkin: 'player_cowboy',
+                equippedCharacterSkin: 'helmeted_shotgun',
                 equippedHat: null,
-                equippedGun: 'gun_revolver'
+                equippedGun: 'gun_shotgun'
             }
         };
         
         // Available items in the store
         this.AVAILABLE_ITEMS = {
-            characterSkins: ['player_default', 'player_cowboy', 'player_red', 'player_blue'],
+            characterSkins: ['cowboy_plain', 'helmeted_shotgun', 'player_default', 'player_cowboy', 'player_red', 'player_blue'],
             hats: ['hat_fedora', 'hat'],
-            guns: ['gun_revolver', 'gun_laser', 'gun'],
+            guns: ['gun_revolver', 'gun_shotgun', 'gun_laser', 'gun'],
             overlays: ['overlay']
         };
         
         // Item display names
         this.ITEM_NAMES = {
-            // Character skins
+            // Character skins (baseSprite)
+            'cowboy_plain': 'Plain Cowboy',
+            'helmeted_shotgun': 'Helmeted Gunslinger',
             'player_default': 'Default Cowboy',
             'player_cowboy': 'Classic Cowboy',
             'player_red': 'Red Bandana',
@@ -939,8 +1217,9 @@ class EquipmentManager {
             'hat_fedora': 'Fedora Hat',
             'hat': 'Cowboy Hat',
             
-            // Guns
+            // Guns (gunSprite)
             'gun_revolver': 'Revolver',
+            'gun_shotgun': 'Shotgun',
             'gun_laser': 'Laser Gun',
             'gun': 'Six-Shooter',
             
@@ -1129,6 +1408,225 @@ class EquipmentManager {
 }
 
 // ================================
+// 🪙 COIN MANAGER CLASS
+// ================================
+
+class CoinManager {
+    constructor() {
+        this.STORAGE_KEY = 'duel_game_coins';
+        this.DEFAULT_COINS = 50;
+        this.DUEL_WIN_REWARD = 25;
+        
+        // Item prices (10-50 coins as requested)
+        this.ITEM_PRICES = {
+            // Character skins (baseSprite) - Higher tier items cost more
+            'cowboy_plain': 15,
+            'helmeted_shotgun': 25,
+            'player_default': 10, // Cheapest default option
+            'player_cowboy': 20,
+            'player_red': 15,
+            'player_blue': 15,
+            
+            // Hats - Moderate pricing
+            'hat_fedora': 30,
+            'hat': 20,
+            
+            // Guns (gunSprite) - Varied pricing based on rarity
+            'gun_revolver': 25,
+            'gun_shotgun': 35,
+            'gun_laser': 50, // Most expensive
+            'gun': 15
+        };
+        
+        this.currentCoins = this.loadCoins();
+        this.coinCounterElement = null;
+    }
+    
+    /**
+     * Load coins from localStorage
+     */
+    loadCoins() {
+        try {
+            const stored = localStorage.getItem(this.STORAGE_KEY);
+            if (stored !== null) {
+                const coins = parseInt(stored, 10);
+                if (!isNaN(coins) && coins >= 0) {
+                    console.log(`🪙 Loaded ${coins} coins from storage`);
+                    return coins;
+                }
+            }
+        } catch (error) {
+            console.warn('⚠️ Error loading coins from storage:', error);
+        }
+        
+        console.log(`🪙 Starting with default ${this.DEFAULT_COINS} coins`);
+        return this.DEFAULT_COINS;
+    }
+    
+    /**
+     * Save coins to localStorage
+     */
+    saveCoins() {
+        try {
+            localStorage.setItem(this.STORAGE_KEY, this.currentCoins.toString());
+            console.log(`💾 Saved ${this.currentCoins} coins to storage`);
+            return true;
+        } catch (error) {
+            console.error('❌ Error saving coins to storage:', error);
+            return false;
+        }
+    }
+    
+    /**
+     * Set the coin counter UI element
+     */
+    setCoinCounterElement(element) {
+        this.coinCounterElement = element;
+        this.updateCoinDisplay();
+    }
+    
+    /**
+     * Get current coin count
+     */
+    getCoins() {
+        return this.currentCoins;
+    }
+    
+    /**
+     * Add coins (e.g., for winning duels)
+     */
+    addCoins(amount) {
+        if (typeof amount !== 'number' || amount < 0) {
+            console.warn('⚠️ Invalid coin amount to add:', amount);
+            return false;
+        }
+        
+        this.currentCoins += amount;
+        this.saveCoins();
+        this.updateCoinDisplay();
+        this.animateCoinGain();
+        
+        console.log(`🪙 Added ${amount} coins. Total: ${this.currentCoins}`);
+        return true;
+    }
+    
+    /**
+     * Spend coins (e.g., for buying items)
+     */
+    spendCoins(amount) {
+        if (typeof amount !== 'number' || amount < 0) {
+            console.warn('⚠️ Invalid coin amount to spend:', amount);
+            return false;
+        }
+        
+        if (this.currentCoins < amount) {
+            console.warn(`⚠️ Not enough coins. Need ${amount}, have ${this.currentCoins}`);
+            return false;
+        }
+        
+        this.currentCoins -= amount;
+        this.saveCoins();
+        this.updateCoinDisplay();
+        
+        console.log(`🪙 Spent ${amount} coins. Remaining: ${this.currentCoins}`);
+        return true;
+    }
+    
+    /**
+     * Check if player can afford an item
+     */
+    canAfford(itemName) {
+        const price = this.getItemPrice(itemName);
+        return this.currentCoins >= price;
+    }
+    
+    /**
+     * Get the price of an item
+     */
+    getItemPrice(itemName) {
+        return this.ITEM_PRICES[itemName] || 10; // Default price if not found
+    }
+    
+    /**
+     * Get all item prices
+     */
+    getAllPrices() {
+        return { ...this.ITEM_PRICES };
+    }
+    
+    /**
+     * Buy an item (spend coins)
+     */
+    buyItem(itemName) {
+        const price = this.getItemPrice(itemName);
+        if (this.spendCoins(price)) {
+            console.log(`🛒 Purchased ${itemName} for ${price} coins`);
+            return true;
+        }
+        return false;
+    }
+    
+    /**
+     * Award coins for winning a duel
+     */
+    awardDuelWin() {
+        return this.addCoins(this.DUEL_WIN_REWARD);
+    }
+    
+    /**
+     * Update the coin display in the UI
+     */
+    updateCoinDisplay() {
+        if (this.coinCounterElement) {
+            const amountElement = this.coinCounterElement.querySelector('#coinAmount');
+            if (amountElement) {
+                amountElement.textContent = this.currentCoins;
+            }
+        }
+    }
+    
+    /**
+     * Animate coin gain effect
+     */
+    animateCoinGain() {
+        if (this.coinCounterElement) {
+            this.coinCounterElement.classList.remove('animate');
+            // Force reflow
+            this.coinCounterElement.offsetHeight;
+            this.coinCounterElement.classList.add('animate');
+            
+            // Remove animation class after it completes
+            setTimeout(() => {
+                this.coinCounterElement.classList.remove('animate');
+            }, 600);
+        }
+    }
+    
+    /**
+     * Reset coins to default amount
+     */
+    resetCoins() {
+        this.currentCoins = this.DEFAULT_COINS;
+        this.saveCoins();
+        this.updateCoinDisplay();
+        console.log(`🔄 Reset coins to ${this.DEFAULT_COINS}`);
+        return true;
+    }
+    
+    /**
+     * Get coin system summary for debugging
+     */
+    getCoinSummary() {
+        return {
+            currentCoins: this.currentCoins,
+            defaultCoins: this.DEFAULT_COINS,
+            duelReward: this.DUEL_WIN_REWARD,
+            itemPrices: this.getAllPrices()
+        };
+    }
+}
+
+// ================================
 // 🎮 DUEL GAME CLASS
 // ================================
 
@@ -1143,9 +1641,11 @@ class DuelGame {
     constructor() {
         this.initializeDOM();
         this.initializeCanvas();
+        this.initializeStoreUI();
         this.initializeConstants();
         this.initializeSprites();
         this.initializeEquipment();
+        this.initializeCoinSystem();
         this.initializePatternManager();
         this.initializeGameState();
         this.initializeAudio();
@@ -1166,6 +1666,11 @@ class DuelGame {
 
     initializeEquipment() {
         this.equipmentManager = new EquipmentManager();
+    }
+    
+    initializeCoinSystem() {
+        this.coinManager = new CoinManager();
+        this.coinManager.setCoinCounterElement(this.coinCounter);
     }
 
     async loadSpritesAndStart() {
@@ -1202,11 +1707,54 @@ class DuelGame {
         this.player2ProgressElement = document.getElementById('player2Progress');
         this.player1FeedbackElement = document.getElementById('player1Feedback');
         this.player2FeedbackElement = document.getElementById('player2Feedback');
+        
+        // Store UI elements
+        this.storeButton = document.getElementById('storeButton');
+        this.storeModal = document.getElementById('storeModal');
+        this.closeStoreButton = document.getElementById('closeStoreButton');
+        this.storeTabs = document.querySelectorAll('.store-tab');
+        this.playerSelect = document.getElementById('playerSelect');
+        this.storeItems = document.getElementById('storeItems');
+        
+        // Coin counter element
+        this.coinCounter = document.getElementById('coinCounter');
     }
     
     initializeCanvas() {
         this.canvas.width = 800;
         this.canvas.height = 400;
+    }
+    
+    initializeStoreUI() {
+        // Current active category
+        this.currentStoreCategory = 'skins';
+        
+        // Add event listeners for store UI
+        this.storeButton.addEventListener('click', () => this.openStore());
+        this.closeStoreButton.addEventListener('click', () => this.closeStore());
+        
+        // Close store when clicking outside modal content
+        this.storeModal.addEventListener('click', (e) => {
+            if (e.target === this.storeModal) {
+                this.closeStore();
+            }
+        });
+        
+        // Add tab switching
+        this.storeTabs.forEach(tab => {
+            tab.addEventListener('click', () => {
+                const category = tab.dataset.category;
+                this.switchStoreCategory(category);
+            });
+        });
+        
+        // Add player selection change handler
+        this.playerSelect.addEventListener('change', () => {
+            this.refreshStoreItems();
+        });
+        
+        // Initialize with skins category
+        this.refreshStoreItems();
     }
     
     initializeConstants() {
@@ -1400,16 +1948,37 @@ class DuelGame {
     }
 
     /**
-     * Update feedback messages when game enters READY state
+     * Handle results from PatternManager
+     */
+    handlePatternResult(result) {
+        if (result.type === 'complete') {
+            this.handlePatternComplete(result.playerId, result.timestamp);
+        } else if (result.type === 'disqualified') {
+            // Disqualification is already handled by PatternManager UI
+            this.checkGameEnd();
+        } else if (result.type === 'wrong_input') {
+            // Wrong input penalty is already handled by PatternManager UI
+            console.log(`🚫 ${result.playerId} wrong input: ${result.actualKey} (expected: ${result.expectedKey})`);
+        } else if (result.type === 'progress') {
+            // Progress updates are handled by PatternManager UI
+            // No additional action needed here
+        }
+    }
+
+    /**
+     * Update feedback messages when game enters READY state with weapon info
      */
     updateFeedbackForReadyState() {
-        if (this.player1FeedbackElement) {
-            this.player1FeedbackElement.textContent = 'Input your pattern now!';
+        const player1Config = this.patternManager.players.player1.weaponConfig;
+        const player2Config = this.patternManager.players.player2.weaponConfig;
+        
+        if (this.player1FeedbackElement && player1Config) {
+            this.player1FeedbackElement.textContent = `${player1Config.name}: Input your pattern now!`;
             this.player1FeedbackElement.className = 'pattern-feedback';
         }
         
-        if (this.player2FeedbackElement) {
-            this.player2FeedbackElement.textContent = 'Input your pattern now!';
+        if (this.player2FeedbackElement && player2Config) {
+            this.player2FeedbackElement.textContent = `${player2Config.name}: Input your pattern now!`;
             this.player2FeedbackElement.className = 'pattern-feedback';
         }
     }
@@ -1527,15 +2096,38 @@ class DuelGame {
     // ================================
     
     initializeEventListeners() {
-        // Keyboard input
-        document.addEventListener('keydown', (e) => {
-            this.keys[e.key.toLowerCase()] = true;
-            this.handleInput(e.key.toLowerCase());
+        // Enhanced keydown listener to handle both letters and arrow keys
+        document.addEventListener('keydown', (event) => {
+            let key = event.key;
+            
+            // Convert arrow keys to symbols for pattern matching
+            switch(event.key) {
+                case 'ArrowUp':
+                    key = '↑';
+                    event.preventDefault(); // Prevent page scrolling
+                    break;
+                case 'ArrowDown':
+                    key = '↓';
+                    event.preventDefault();
+                    break;
+                case 'ArrowLeft':
+                    key = '←';
+                    event.preventDefault();
+                    break;
+                case 'ArrowRight':
+                    key = '→';
+                    event.preventDefault();
+                    break;
+                default:
+                    // Regular letter keys - convert to uppercase
+                    key = event.key.toUpperCase();
+                    break;
+            }
+            
+            this.handleInput(key);
         });
         
-        document.addEventListener('keyup', (e) => {
-            this.keys[e.key.toLowerCase()] = false;
-        });
+        console.log('⌨️ Event listeners initialized with arrow key support');
         
         // Play Again button
         this.playAgainBtn.addEventListener('click', () => {
@@ -1570,21 +2162,6 @@ class DuelGame {
             if (result) {
                 this.handlePatternResult(result);
             }
-        }
-    }
-
-    /**
-     * Handle results from PatternManager
-     */
-    handlePatternResult(result) {
-        if (result.type === 'complete') {
-            this.handlePatternComplete(result.playerId, result.timestamp);
-        } else if (result.type === 'disqualified') {
-            // Disqualification is already handled by PatternManager UI
-            this.checkGameEnd();
-        } else if (result.type === 'progress') {
-            // Progress updates are handled by PatternManager UI
-            // No additional action needed here
         }
     }
 
@@ -1843,6 +2420,237 @@ class DuelGame {
         }
         return success;
     }
+    
+    // ================================
+    // 🛒 STORE UI SECTION
+    // ================================
+    
+    openStore() {
+        this.storeModal.classList.remove('hidden');
+        this.refreshStoreItems();
+        console.log('🛒 Store opened');
+    }
+    
+    closeStore() {
+        this.storeModal.classList.add('hidden');
+        console.log('🛒 Store closed');
+    }
+    
+    switchStoreCategory(category) {
+        // Update active tab
+        this.storeTabs.forEach(tab => {
+            tab.classList.toggle('active', tab.dataset.category === category);
+        });
+        
+        this.currentStoreCategory = category;
+        this.refreshStoreItems();
+        console.log(`🛒 Switched to ${category} category`);
+    }
+    
+    refreshStoreItems() {
+        const selectedPlayer = parseInt(this.playerSelect.value);
+        const availableItems = this.equipmentManager.getAvailableItems();
+        const playerEquipment = this.equipmentManager.getPlayerEquipment(selectedPlayer);
+        
+        // Clear existing items
+        this.storeItems.innerHTML = '';
+        
+        let items = [];
+        let equippedItem = null;
+        
+        switch (this.currentStoreCategory) {
+            case 'skins':
+                items = availableItems.characterSkins;
+                equippedItem = playerEquipment.equippedCharacterSkin;
+                break;
+            case 'hats':
+                items = availableItems.hats;
+                equippedItem = playerEquipment.equippedHat;
+                break;
+            case 'guns':
+                items = availableItems.guns;
+                equippedItem = playerEquipment.equippedGun;
+                break;
+        }
+        
+        // Create item elements
+        items.forEach(itemName => {
+            const itemElement = this.createStoreItemElement(itemName, selectedPlayer, equippedItem === itemName);
+            this.storeItems.appendChild(itemElement);
+        });
+    }
+    
+    createStoreItemElement(itemName, selectedPlayer, isEquipped) {
+        const itemDiv = document.createElement('div');
+        itemDiv.className = `store-item ${isEquipped ? 'equipped' : ''}`;
+        
+        // Create thumbnail
+        const thumbnail = document.createElement('div');
+        thumbnail.className = 'item-thumbnail';
+        
+        // Create thumbnail canvas
+        const thumbnailCanvas = document.createElement('canvas');
+        thumbnailCanvas.width = 64;
+        thumbnailCanvas.height = 64;
+        const thumbnailCtx = thumbnailCanvas.getContext('2d');
+        
+        // Draw sprite thumbnail
+        this.drawSpriteThumbnail(thumbnailCtx, itemName);
+        
+        thumbnail.appendChild(thumbnailCanvas);
+        
+        // Create item name
+        const nameDiv = document.createElement('div');
+        nameDiv.className = 'item-name';
+        nameDiv.textContent = this.equipmentManager.getItemDisplayName(itemName);
+        
+        // Create item price
+        const priceDiv = document.createElement('div');
+        priceDiv.className = 'item-price';
+        const price = this.coinManager.getItemPrice(itemName);
+        priceDiv.innerHTML = `<span class="coin-icon">🪙</span>${price}`;
+        
+        // Create equip button
+        const equipButton = document.createElement('button');
+        equipButton.className = 'equip-button';
+        const canAfford = this.coinManager.canAfford(itemName);
+        
+        if (isEquipped) {
+            equipButton.textContent = 'Equipped';
+            equipButton.disabled = true;
+        } else if (!canAfford) {
+            equipButton.textContent = 'Can\'t Afford';
+            equipButton.disabled = true;
+            equipButton.style.background = '#999999';
+            equipButton.style.color = '#666666';
+        } else {
+            equipButton.textContent = `Buy (🪙${price})`;
+            equipButton.disabled = false;
+        }
+        
+        if (!isEquipped && canAfford) {
+            equipButton.addEventListener('click', () => {
+                this.buyAndEquipItem(selectedPlayer, this.currentStoreCategory, itemName);
+            });
+        }
+        
+        itemDiv.appendChild(thumbnail);
+        itemDiv.appendChild(nameDiv);
+        itemDiv.appendChild(priceDiv);
+        itemDiv.appendChild(equipButton);
+        
+        return itemDiv;
+    }
+    
+    drawSpriteThumbnail(ctx, itemName) {
+        // Clear canvas with transparent background
+        ctx.clearRect(0, 0, 64, 64);
+        
+        // Try to get sprite from sprite loader
+        const sprite = this.spriteLoader.getSprite(itemName);
+        if (sprite && sprite.complete) {
+            try {
+                // Draw sprite centered and scaled to fit
+                const scale = Math.min(64 / this.spriteLoader.SPRITE_SIZE, 2);
+                const scaledSize = this.spriteLoader.SPRITE_SIZE * scale;
+                const offsetX = (64 - scaledSize) / 2;
+                const offsetY = (64 - scaledSize) / 2;
+                
+                ctx.drawImage(sprite, offsetX, offsetY, scaledSize, scaledSize);
+            } catch (error) {
+                console.warn(`⚠️ Failed to draw sprite thumbnail for ${itemName}:`, error);
+                this.drawPlaceholderThumbnail(ctx, itemName);
+            }
+        } else {
+            // Draw placeholder
+            this.drawPlaceholderThumbnail(ctx, itemName);
+        }
+    }
+    
+    drawPlaceholderThumbnail(ctx, itemName) {
+        // Determine color based on item type
+        let color = '#8B4513';
+        if (itemName.includes('gun')) {
+            if (itemName.includes('laser')) {
+                color = '#00FFFF';
+            } else if (itemName.includes('shotgun')) {
+                color = '#8B4513';
+            } else {
+                color = '#444444';
+            }
+        } else if (itemName.includes('hat')) {
+            color = '#2F2F2F';
+        } else if (itemName.includes('helmeted') || itemName.includes('shotgun')) {
+            color = '#556B2F';
+        } else if (itemName.includes('cowboy') || itemName.includes('plain')) {
+            color = '#654321';
+        } else if (itemName.includes('red')) {
+            color = '#CD5C5C';
+        } else if (itemName.includes('blue')) {
+            color = '#4169E1';
+        }
+        
+        // Draw simple placeholder
+        ctx.fillStyle = color;
+        ctx.fillRect(8, 8, 48, 48);
+        
+        // Add border
+        ctx.strokeStyle = '#2F1B14';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(8, 8, 48, 48);
+        
+        // Add item type indicator
+        ctx.fillStyle = '#FFFFFF';
+        ctx.font = '12px monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText(itemName.charAt(0).toUpperCase(), 32, 36);
+    }
+    
+    buyAndEquipItem(playerNumber, category, itemName) {
+        // Check if player can afford the item
+        if (!this.coinManager.canAfford(itemName)) {
+            console.warn(`⚠️ Not enough coins to buy ${itemName}`);
+            return false;
+        }
+        
+        // Try to buy the item first
+        if (!this.coinManager.buyItem(itemName)) {
+            console.warn(`⚠️ Failed to purchase ${itemName}`);
+            return false;
+        }
+        
+        // Now equip the item
+        let success = false;
+        
+        switch (category) {
+            case 'skins':
+                success = this.equipSkin(playerNumber, itemName);
+                break;
+            case 'hats':
+                success = this.equipHat(playerNumber, itemName);
+                break;
+            case 'guns':
+                success = this.equipGun(playerNumber, itemName);
+                break;
+        }
+        
+        if (success) {
+            this.refreshStoreItems(); // Refresh to update equipped states and prices
+            console.log(`🛒 Purchased and equipped ${itemName} to Player ${playerNumber}`);
+        } else {
+            // If equipping failed, refund the coins
+            const price = this.coinManager.getItemPrice(itemName);
+            this.coinManager.addCoins(price);
+            console.warn(`⚠️ Failed to equip ${itemName}, refunded ${price} coins`);
+        }
+        
+        return success;
+    }
+    
+    equipItemFromStore(playerNumber, category, itemName) {
+        // Legacy method - now redirects to buy and equip
+        return this.buyAndEquipItem(playerNumber, category, itemName);
+    }
 
     /**
      * Get all available sprites (for backward compatibility)
@@ -1923,7 +2731,7 @@ class DuelGame {
         this.countdownTimer = Date.now();
         
         // Generate patterns at the start of countdown
-        const patterns = this.patternManager.generatePatterns();
+        const patterns = this.patternManager.generatePatterns(this.equipmentManager.getPlayerEquipment(1), this.equipmentManager.getPlayerEquipment(2));
         
         // Store patterns in player objects for backward compatibility
         this.player1.pattern = patterns.player1;
@@ -1974,6 +2782,14 @@ class DuelGame {
         if (endState) {
             this.gameState = this.GAME_STATES.FINISHED;
             this.resultElement.textContent = endState.reason;
+            
+            // Award coins to the winner
+            if (endState.winner) {
+                this.coinManager.awardDuelWin();
+                console.log(`🪙 ${endState.winner} wins! Awarded ${this.coinManager.DUEL_WIN_REWARD} coins`);
+            } else {
+                console.log('🤝 No winner - no coins awarded');
+            }
             
             // Hide patterns and show the Play Again button
             this.patternManager.hidePatterns();
@@ -2357,6 +3173,66 @@ document.addEventListener('DOMContentLoaded', () => {
         return window.duelGame.resetAllEquipment();
     };
 
+    // Coin system debug functions
+    window.debugCoins = () => {
+        const summary = window.duelGame.coinManager.getCoinSummary();
+        console.log('🪙 Coin System Debug:', summary);
+        return summary;
+    };
+
+    window.getCoins = () => {
+        const coins = window.duelGame.coinManager.getCoins();
+        console.log(`🪙 Current coins: ${coins}`);
+        return coins;
+    };
+
+    window.addCoins = (amount) => {
+        console.log(`🪙 Adding ${amount} coins`);
+        return window.duelGame.coinManager.addCoins(amount);
+    };
+
+    window.spendCoins = (amount) => {
+        console.log(`🪙 Spending ${amount} coins`);
+        return window.duelGame.coinManager.spendCoins(amount);
+    };
+
+    window.resetCoins = () => {
+        console.log('🔄 Resetting coins to default amount');
+        return window.duelGame.coinManager.resetCoins();
+    };
+
+    window.getItemPrice = (itemName) => {
+        const price = window.duelGame.coinManager.getItemPrice(itemName);
+        console.log(`🪙 ${itemName} costs ${price} coins`);
+        return price;
+    };
+
+    window.canAfford = (itemName) => {
+        const affordable = window.duelGame.coinManager.canAfford(itemName);
+        const price = window.duelGame.coinManager.getItemPrice(itemName);
+        const currentCoins = window.duelGame.coinManager.getCoins();
+        console.log(`🪙 Can afford ${itemName} (${price} coins)? ${affordable} (you have ${currentCoins})`);
+        return affordable;
+    };
+
+    window.demoCoins = () => {
+        console.log('🪙 Coin System Demo:');
+        console.log('📋 Available functions:');
+        console.log('  debugCoins() - Show detailed coin system info');
+        console.log('  getCoins() - Show current coin count');
+        console.log('  addCoins(amount) - Add coins (for testing)');
+        console.log('  spendCoins(amount) - Spend coins (for testing)');
+        console.log('  resetCoins() - Reset to default amount (50)');
+        console.log('  getItemPrice("itemName") - Check item price');
+        console.log('  canAfford("itemName") - Check if you can afford item');
+        console.log('');
+        console.log('💰 Earn coins: +25 for winning duels');
+        console.log('🛒 Spend coins: 10-50 per cosmetic item');
+        console.log('💾 Coins automatically save to localStorage!');
+        console.log('');
+        console.log('💡 Try: getItemPrice("gun_laser"); canAfford("gun_laser"); addCoins(100)');
+    };
+
     window.demoStore = () => {
         console.log('🏪 Equipment Store Demo:');
         console.log('📋 Available functions:');
@@ -2370,12 +3246,12 @@ document.addEventListener('DOMContentLoaded', () => {
         console.log('  getPlayerEquipment(1) - Show player equipment');
         console.log('  resetAllEquipment() - Reset all to defaults');
         console.log('');
-        console.log('🎨 Available skins: player_default, player_cowboy, player_red, player_blue');
+        console.log('🎨 Available skins (baseSprite): cowboy_plain, helmeted_shotgun, player_default, player_cowboy, player_red, player_blue');
         console.log('🎩 Available hats: hat_fedora, hat');
-        console.log('🔫 Available guns: gun_revolver, gun_laser, gun');
+        console.log('🔫 Available guns (gunSprite): gun_revolver, gun_shotgun, gun_laser, gun');
         console.log('✨ Available overlays: overlay');
         console.log('');
-        console.log('💡 Try: equipSkin(2, "player_cowboy"); equipHat(1, "hat_fedora"); equipGun(1, "gun_laser")');
+        console.log('💡 Try: equipSkin(1, "cowboy_plain"); equipHat(1, "hat_fedora"); equipGun(2, "gun_shotgun")');
         console.log('💾 All changes are saved to localStorage automatically!');
     };
 
@@ -2424,5 +3300,7 @@ document.addEventListener('DOMContentLoaded', () => {
     console.log('🔧 Access game instance via window.duelGame for debugging');
     console.log('🔧 Pattern functions: debugInputQueue(), debugPatternManager(), demoInputQueue()');
     console.log('🎒 Equipment functions: debugEquipment(), equipSkin(), equipHat(), demoStore()');
-    console.log('💾 Equipment is automatically saved to localStorage!');
+    console.log('🪙 Coin functions: debugCoins(), getCoins(), addCoins(), demoCoins()');
+    console.log('💾 Equipment and coins automatically save to localStorage!');
 });
+
